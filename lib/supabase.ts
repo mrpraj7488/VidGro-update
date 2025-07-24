@@ -102,6 +102,12 @@ export async function awardCoinsForVideoCompletion(
   videoId: string,
   watchDuration: number
 ) {
+  console.log('🎯 Calling award_coins_for_video_completion with:', {
+    userId,
+    videoId,
+    watchDuration
+  });
+  
   const { data, error } = await supabase.rpc('award_coins_for_video_completion', {
     user_uuid: userId,
     video_uuid: videoId,
@@ -110,9 +116,11 @@ export async function awardCoinsForVideoCompletion(
 
   if (error) {
     console.error('Error awarding coins:', error);
-    return null;
+    // Return a failed result instead of null to help with debugging
+    return { success: false, error: error.message };
   }
 
+  console.log('💰 Coin award response:', data);
   return data;
 }
 

@@ -32,18 +32,23 @@ export const useVideoStore = create<VideoState>((set, get) => ({
   fetchVideos: async (userId: string) => {
     set({ isLoading: true });
     try {
+      console.log('🎬 Fetching videos for user:', userId);
       const videos = await getNextVideoForUser(userId);
+      console.log('📹 Received videos:', videos?.length || 0);
+      
       if (videos && videos.length > 0) {
         const { blacklistedVideoIds } = get();
         const filteredVideos = videos.filter(
           (video: Video) => !blacklistedVideoIds.includes(video.video_id)
         );
+        console.log('✅ Filtered videos:', filteredVideos.length);
         set({ 
           videoQueue: filteredVideos, 
           currentVideoIndex: 0,
           isLoading: false 
         });
       } else {
+        console.log('❌ No videos available');
         set({ videoQueue: [], currentVideoIndex: 0, isLoading: false });
       }
     } catch (error) {
