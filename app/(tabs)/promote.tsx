@@ -297,10 +297,6 @@ export default function PromoteTab() {
               <Text style={styles.costLabel}>Final Cost:</Text>
               <Text style={styles.costValue}>🪙{cost}</Text>
             </View>
-            <View style={styles.costRow}>
-              <Text style={styles.costLabel}>Coin Reward per View:</Text>
-              <Text style={styles.costValue}>🪙{calculateCoinsByDuration(videoDuration)}</Text>
-            </View>
             {profile?.is_vip && (
               <View style={styles.vipDiscount}>
                 <Text style={styles.vipDiscountText}>👑 VIP 10% Discount Applied</Text>
