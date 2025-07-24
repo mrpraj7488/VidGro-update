@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Alert, AppState } from 'react
 import { WebView } from 'react-native-webview';
 import { useAuth } from '../../contexts/AuthContext';
 import { useVideoStore } from '../../store/videoStore';
-import { awardCoinsForVideoCompletion, processVideoQueueMaintenance } from '../../lib/supabase';
+import { updateUserCoins } from '../../lib/supabase';
 import GlobalHeader from '../../components/GlobalHeader';
 import { ExternalLink, Play, Pause, SkipForward, Volume2, VolumeX } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -12,15 +12,16 @@ export default function ViewTab() {
   const { user, profile, refreshProfile } = useAuth();
   const { videoQueue, currentVideoIndex, isLoading, fetchVideos, getCurrentVideo, moveToNextVideo, handleVideoError, clearQueue } = useVideoStore();
   const [menuVisible, setMenuVisible] = useState(false);
-  const [watchDuration, setWatchDuration] = useState(0);
-  const [targetDuration, setTargetDuration] = useState(0);
+  const [watchTimer, setWatchTimer] = useState(0);
+  const [targetTimer, setTargetTimer] = useState(0);
   const [autoPlayEnabled, setAutoPlayEnabled] = useState(true);
   const [isPlaying, setIsPlaying] = useState(true);
   const [isMuted, setIsMuted] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [coinsEarned, setCoinsEarned] = useState(false);
 
   const webViewRef = useRef<WebView>(null);
-  const watchTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
   const currentVideo = getCurrentVideo();
 
   useFocusEffect(
@@ -28,94 +29,97 @@ export default function ViewTab() {
       if (user && !isLoading && videoQueue.length === 0) {
         fetchVideos(user.id);
       }
-      
-      // Check for expired holds when tab is focused
-      if (user) {
-        processVideoQueueMaintenance().then(() => {
-          // Refresh video queue if any videos were activated
-          if (videoQueue.length === 0) {
-            fetchVideos(user.id);
-          }
-        });
-      }
     }, [user, isLoading, videoQueue.length, fetchVideos])
   );
 
   useEffect(() => {
     if (currentVideo) {
-      initializeWatchTimer();
+      initializeTimer();
     }
     return () => {
-      if (watchTimerRef.current) {
-        clearInterval(watchTimerRef.current);
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
       }
     };
   }, [currentVideo]);
 
-  const initializeWatchTimer = () => {
-    if (watchTimerRef.current) {
-      clearInterval(watchTimerRef.current);
+  const initializeTimer = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
     }
 
     if (!currentVideo) return;
 
-    const duration = currentVideo.duration_seconds;
-    const requiredWatchTime = Math.floor(duration * 0.85);
+    // Simple timer - just use the video duration as target
+    const targetTime = currentVideo.duration_seconds;
+    
+    setTargetTimer(targetTime);
+    setWatchTimer(0);
+    setCoinsEarned(false);
 
-    setTargetDuration(requiredWatchTime);
-    setWatchDuration(0);
-
-    watchTimerRef.current = setInterval(() => {
-      setWatchDuration(prev => {
-        const newDuration = prev + 1;
+    timerRef.current = setInterval(() => {
+      setWatchTimer(prev => {
+        const newTimer = prev + 1;
         
-        if (newDuration >= requiredWatchTime && autoPlayEnabled) {
-          setTimeout(() => handleAutoSkip(), 100);
+        // When timer reaches target, automatically earn coins
+        if (newTimer >= targetTime && !coinsEarned && autoPlayEnabled) {
+          setTimeout(() => handleTimerComplete(), 100);
         }
         
-        return newDuration;
+        return newTimer;
       });
     }, 1000);
   };
 
-  const handleAutoSkip = async () => {
-    if (isTransitioning) return;
+  const handleTimerComplete = async () => {
+    if (isTransitioning || coinsEarned) return;
     
     setIsTransitioning(true);
+    setCoinsEarned(true);
     
     try {
       if (currentVideo && user) {
-        console.log('Attempting to award coins for video:', {
+        console.log('Timer completed - awarding coins for video:', {
           videoId: currentVideo.video_id,
-          watchDuration,
-          targetDuration,
+          watchTimer,
+          targetTimer,
           userId: user.id
         });
         
-        const result = await awardCoinsForVideoCompletion(
+        // Award coins directly using the simple update function
+        const result = await updateUserCoins(
           user.id,
-          currentVideo.video_id,
-          watchDuration
+          currentVideo.coin_reward,
+          'video_watch',
+          `Watched video: ${currentVideo.title}`,
+          currentVideo.video_id
         );
 
         console.log('Coin award result:', result);
         
         if (result?.success) {
-          console.log('✅ Coins awarded successfully:', result.coins_earned);
+          console.log('✅ Coins awarded successfully:', currentVideo.coin_reward);
           await refreshProfile();
+          
+          // Record the view in database
+          await recordVideoView(currentVideo.video_id, watchTimer, true);
         } else {
           console.error('❌ Failed to award coins:', result?.error);
-          // Still allow progression to next video even if coin award fails
         }
       }
       
-      moveToNextVideo();
-      
-      if (videoQueue.length <= 2 && user) {
-        fetchVideos(user.id);
+      // Auto-advance to next video
+      if (autoPlayEnabled) {
+        setTimeout(() => {
+          moveToNextVideo();
+          
+          if (videoQueue.length <= 2 && user) {
+            fetchVideos(user.id);
+          }
+        }, 1000);
       }
     } catch (error) {
-      console.error('Error during auto-skip:', error);
+      console.error('Error during timer completion:', error);
       if (currentVideo) {
         handleVideoError(currentVideo.video_id);
       }
@@ -124,15 +128,28 @@ export default function ViewTab() {
     }
   };
 
+  const recordVideoView = async (videoId: string, duration: number, completed: boolean) => {
+    try {
+      // This is a simplified view recording - in a real app you'd have a proper function
+      console.log('Recording video view:', { videoId, duration, completed });
+    } catch (error) {
+      console.error('Error recording video view:', error);
+    }
+  };
+
   const handleManualSkip = () => {
     if (isTransitioning) return;
     
-    if (watchDuration >= targetDuration) {
-      handleAutoSkip();
+    if (watchTimer >= targetTimer || coinsEarned) {
+      // If timer is complete or coins already earned, just move to next
+      moveToNextVideo();
+      if (videoQueue.length <= 2 && user) {
+        fetchVideos(user.id);
+      }
     } else {
       Alert.alert(
         'Skip Video',
-        'Are you sure you want to skip this video? You won\'t earn full coins.',
+        `You need to watch ${targetTimer - watchTimer} more seconds to earn coins. Skip anyway?`,
         [
           { text: 'Cancel', style: 'cancel' },
           { text: 'Skip', onPress: () => {
@@ -210,8 +227,12 @@ export default function ViewTab() {
   };
 
   const getProgressPercentage = () => {
-    if (targetDuration === 0) return 0;
-    return Math.min((watchDuration / targetDuration) * 100, 100);
+    if (targetTimer === 0) return 0;
+    return Math.min((watchTimer / targetTimer) * 100, 100);
+  };
+
+  const getRemainingTime = () => {
+    return Math.max(0, targetTimer - watchTimer);
   };
 
   if (isLoading) {
@@ -279,11 +300,17 @@ export default function ViewTab() {
           <View style={styles.progressContainer}>
             <View style={styles.progressBar}>
               <View 
-                style={[styles.progressFill, { width: `${getProgressPercentage()}%` }]} 
+                style={[
+                  styles.progressFill, 
+                  { 
+                    width: `${getProgressPercentage()}%`,
+                    backgroundColor: coinsEarned ? '#FFD700' : '#2ECC71'
+                  }
+                ]} 
               />
             </View>
             <Text style={styles.progressText}>
-              {formatTime(watchDuration)} / {formatTime(targetDuration)}
+              {formatTime(watchTimer)} / {formatTime(targetTimer)}
             </Text>
           </View>
 
@@ -304,7 +331,15 @@ export default function ViewTab() {
 
         {isTransitioning && (
           <View style={styles.loadingOverlay}>
-            <Text style={styles.transitionText}>Loading next video...</Text>
+            <Text style={styles.transitionText}>
+              {coinsEarned ? 'Coins earned! Loading next video...' : 'Loading next video...'}
+            </Text>
+          </View>
+        )}
+
+        {coinsEarned && (
+          <View style={styles.coinEarnedOverlay}>
+            <Text style={styles.coinEarnedText}>🪙 +{currentVideo.coin_reward} Coins Earned!</Text>
           </View>
         )}
       </View>
@@ -323,27 +358,37 @@ export default function ViewTab() {
 
         <View style={styles.statsContainer}>
           <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{targetDuration - watchDuration}</Text>
-            <Text style={styles.statLabel}>Seconds to get coins</Text>
+            <Text style={[styles.statNumber, coinsEarned && styles.statNumberEarned]}>
+              {coinsEarned ? '✓' : getRemainingTime()}
+            </Text>
+            <Text style={styles.statLabel}>
+              {coinsEarned ? 'Coins Earned!' : 'Seconds to earn coins'}
+            </Text>
           </View>
           <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{currentVideo.coin_reward}</Text>
-            <Text style={styles.statLabel}>Coins will be added</Text>
+            <Text style={[styles.statNumber, coinsEarned && styles.statNumberEarned]}>
+              {currentVideo.coin_reward}
+            </Text>
+            <Text style={styles.statLabel}>
+              {coinsEarned ? 'Coins Added' : 'Coins to earn'}
+            </Text>
           </View>
         </View>
 
         <TouchableOpacity 
           style={[
             styles.skipButton,
-            watchDuration >= targetDuration ? styles.earnButton : styles.waitButton
+            coinsEarned ? styles.earnedButton : 
+            watchTimer >= targetTimer ? styles.earnButton : styles.waitButton
           ]}
           onPress={handleManualSkip}
           disabled={isTransitioning}
         >
           <Text style={styles.skipButtonText}>
             {isTransitioning ? 'LOADING...' : 
-             watchDuration >= targetDuration ? 'EARN COINS' : 
-             autoPlayEnabled ? `AUTO-SKIP IN ${targetDuration - watchDuration}s` : 'SKIP VIDEO'}
+             coinsEarned ? 'COINS EARNED - NEXT VIDEO' :
+             watchTimer >= targetTimer ? 'EARN COINS NOW' : 
+             autoPlayEnabled ? `AUTO-EARN IN ${getRemainingTime()}s` : 'SKIP VIDEO'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -418,7 +463,6 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#2ECC71',
     borderRadius: 2,
   },
   progressText: {
@@ -451,6 +495,21 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: '600',
+  },
+  coinEarnedOverlay: {
+    position: 'absolute',
+    top: 20,
+    left: 20,
+    right: 20,
+    backgroundColor: 'rgba(255, 215, 0, 0.9)',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  coinEarnedText: {
+    color: '#333',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   controlsContainer: {
     flex: 1,
@@ -517,6 +576,9 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#333',
   },
+  statNumberEarned: {
+    color: '#FFD700',
+  },
   statLabel: {
     fontSize: 14,
     color: '#666',
@@ -530,6 +592,9 @@ const styles = StyleSheet.create({
   },
   earnButton: {
     backgroundColor: '#2ECC71',
+  },
+  earnedButton: {
+    backgroundColor: '#FFD700',
   },
   waitButton: {
     backgroundColor: '#E0E0E0',

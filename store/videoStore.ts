@@ -1,13 +1,15 @@
 import { create } from 'zustand';
-import { getNextVideoForUser } from '../lib/supabase';
+import { getNextVideoQueueEnhanced } from '../lib/supabase';
 
 interface Video {
   video_id: string;
-  youtube_video_id: string;
   youtube_url: string;
   title: string;
   duration_seconds: number;
   coin_reward: number;
+  views_count: number;
+  target_views: number;
+  status: string;
 }
 
 interface VideoState {
@@ -33,7 +35,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
     set({ isLoading: true });
     try {
       console.log('🎬 Fetching videos for user:', userId);
-      const videos = await getNextVideoForUser(userId);
+      const videos = await getNextVideoQueueEnhanced(userId);
       console.log('📹 Received videos:', videos?.length || 0);
       
       if (videos && videos.length > 0) {

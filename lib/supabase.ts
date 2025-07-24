@@ -108,8 +108,8 @@ export async function updateUserCoins(
 }
 
 // Helper function to get next video for user
-export async function getNextVideoForUser(userId: string) {
-  const { data, error } = await supabase.rpc('get_next_video_for_user_enhanced', {
+export async function getNextVideoQueueEnhanced(userId: string) {
+  const { data, error } = await supabase.rpc('get_next_video_queue_enhanced', {
     user_uuid: userId
   });
 
@@ -122,18 +122,18 @@ export async function getNextVideoForUser(userId: string) {
 }
 
 // Helper function to award coins for video completion
-export async function awardCoinsForVideoCompletion(
+export async function awardCoinsSimpleTimer(
   userId: string,
   videoId: string,
   watchDuration: number
 ) {
-  console.log('🎯 Calling award_coins_for_video_completion with:', {
+  console.log('🎯 Calling award_coins_simple_timer with:', {
     userId,
     videoId,
     watchDuration
   });
   
-  const { data, error } = await supabase.rpc('award_coins_for_video_completion', {
+  const { data, error } = await supabase.rpc('award_coins_simple_timer', {
     user_uuid: userId,
     video_uuid: videoId,
     watch_duration: watchDuration
@@ -141,7 +141,6 @@ export async function awardCoinsForVideoCompletion(
 
   if (error) {
     console.error('Error awarding coins:', error);
-    // Return a failed result instead of null to help with debugging
     return { success: false, error: error.message };
   }
 
