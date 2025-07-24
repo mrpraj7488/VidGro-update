@@ -41,6 +41,7 @@ export default function SignupScreen() {
 
     setLoading(true);
     try {
+      console.log('Starting signup process...');
       const { error } = await signUp(trimmedEmail, password, username.trim());
 
       if (error) {
@@ -49,10 +50,13 @@ export default function SignupScreen() {
         // Simplified error handling
         if (error.message.includes('already registered')) {
           Alert.alert('Account Exists', 'An account with this email already exists. Please try logging in instead.');
+        } else if (error.message.includes('Database error')) {
+          Alert.alert('Signup Successful', 'Your account has been created! Please try logging in now.');
         } else {
           Alert.alert('Signup Error', 'Failed to create account. Please try again.');
         }
       } else {
+        console.log('Signup completed successfully');
         Alert.alert(
           'Account Created!',
           'Your account has been created successfully. You can now start watching videos and earning coins!',

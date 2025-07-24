@@ -69,40 +69,65 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const loadProfile = async (userId: string) => {
     try {
+      console.log('Loading profile for user:', userId);
       const profileData = await getUserProfile(userId);
       if (profileData) {
+        console.log('Profile loaded successfully:', profileData.username);
         setProfile(profileData);
       } else {
         console.warn('No profile data returned for user:', userId);
-        // Create a minimal profile object to prevent app crashes
-        setProfile({
-          id: userId,
-          email: user?.email || 'unknown@example.com',
-          username: 'User',
-          coins: 0,
-          is_vip: false,
-          vip_expires_at: null,
-          referral_code: 'LOADING',
-          referred_by: null,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        });
+        // Wait a moment and try again in case profile is still being created
+        setTimeout(async () => {
+          console.log('Retrying profile load...');
+          const retryProfileData = await getUserProfile(userId);
+          if (retryProfileData) {
+            console.log('Profile loaded on retry:', retryProfileData.username);
+            setProfile(retryProfileData);
+          } else {
+            console.error('Profile still not found after retry');
+            // Create a minimal profile object to prevent app crashes
+            setProfile({
+              id: userId,
+              email: user?.email || 'unknown@example.com',
+              username: 'User',
+              coins: 0,
+              is_vip: false,
+              vip_expires_at: null,
+              referral_code: 'LOADING',
+              referred_by: null,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            });
+          }
+        }, 2000);
       }
     } catch (error) {
       console.error('Error loading profile:', error);
-      // Set a fallback profile to prevent crashes
-      setProfile({
-        id: userId,
-        email: user?.email || 'unknown@example.com',
-        username: 'User',
-        coins: 0,
-        is_vip: false,
-        vip_expires_at: null,
-        referral_code: 'ERROR',
-        referred_by: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      });
+      // Wait and retry on error too
+      setTimeout(async () => {
+        try {
+          const retryProfileData = await getUserProfile(userId);
+          if (retryProfileData) {
+            setProfile(retryProfileData);
+          } else {
+            // Set a fallback profile to prevent crashes
+            setProfile({
+              id: userId,
+              email: user?.email || 'unknown@example.com',
+              username: 'User',
+              coins: 0,
+              is_vip: false,
+              vip_expires_at: null,
+              referral_code: 'ERROR',
+              referred_by: null,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            });
+          }
+        } catch (retryError) {
+          console.error('Retry also failed:', retryError);
+        }
+      }, 2000);
     }
   };
 
@@ -130,6 +155,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       email,
       password,
       options: {
+        emailRedirectTo: undefined,
         data: {
           username,
         },
@@ -141,6 +167,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       session: data?.session?.access_token ? 'present' : 'null',
       error: error?.message 
     });
+    
+    // If signup successful but no session, try to sign in immediately
+    if (data?.user && !data?.session && !error) {
+      console.log('User created but no session, attempting immediate sign in...');
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      
+      if (signInError) {
+        console.log('Auto sign-in failed:', signInError.message);
+        return { error: signInError };
+      }
+      
+      console.log('Auto sign-in successful');
+      return { error: null };
+    }
     
     return { error };
   };

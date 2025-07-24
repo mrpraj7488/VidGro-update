@@ -26,9 +26,10 @@ export const supabase = createClient(
     persistSession: true,
     detectSessionInUrl: false,
     flowType: 'implicit',
-    // Disable all email confirmation requirements
+    // Completely disable email confirmation
     confirmSignUp: false,
     emailRedirectTo: undefined,
+    skipConfirmationForLocalhost: true,
   },
   global: {
     headers: {
@@ -40,6 +41,8 @@ export const supabase = createClient(
 // Helper function to get user profile
 export async function getUserProfile(userId: string) {
   try {
+    console.log('Fetching profile for user ID:', userId);
+    
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
@@ -47,10 +50,32 @@ export async function getUserProfile(userId: string) {
       .single();
 
     if (error) {
-      console.error('Error fetching user profile:', error);
+      console.error('Error fetching user profile:', error.message, error.details);
+      
+      // If profile doesn't exist, wait a moment and try again
+      if (error.code === 'PGRST116') {
+        console.log('Profile not found, waiting for trigger to create it...');
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        
+        const { data: retryData, error: retryError } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', userId)
+          .single();
+          
+        if (retryError) {
+          console.error('Profile still not found after retry:', retryError.message);
+          return null;
+        }
+        
+        console.log('Profile found on retry');
+        return retryData;
+      }
+      
       return null;
     }
 
+    console.log('Profile fetched successfully');
     return data;
   } catch (error) {
     console.error('Profile fetch failed:', error);
