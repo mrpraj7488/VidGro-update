@@ -85,14 +85,27 @@ export default function ViewTab() {
     
     try {
       if (currentVideo && user) {
+        console.log('Attempting to award coins for video:', {
+          videoId: currentVideo.video_id,
+          watchDuration,
+          targetDuration,
+          userId: user.id
+        });
+        
         const result = await awardCoinsForVideoCompletion(
           user.id,
           currentVideo.video_id,
           watchDuration
         );
 
+        console.log('Coin award result:', result);
+        
         if (result?.success) {
+          console.log('✅ Coins awarded successfully:', result.coins_earned);
           await refreshProfile();
+        } else {
+          console.error('❌ Failed to award coins:', result?.error);
+          // Still allow progression to next video even if coin award fails
         }
       }
       
