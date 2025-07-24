@@ -60,7 +60,7 @@ export default function ViewTab() {
     if (!currentVideo) return;
 
     const duration = currentVideo.duration_seconds;
-    const requiredWatchTime = Math.floor(duration * 0.95);
+    const requiredWatchTime = Math.floor(duration * 0.85);
 
     setTargetDuration(requiredWatchTime);
     setWatchDuration(0);
