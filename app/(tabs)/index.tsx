@@ -17,6 +17,7 @@ export default function ViewTab() {
   const [autoPlayEnabled, setAutoPlayEnabled] = useState(true);
   const [isProcessingReward, setIsProcessingReward] = useState(false);
   const [coinsEarned, setCoinsEarned] = useState(false);
+  const [processedVideos, setProcessedVideos] = useState<Set<string>>(new Set());
 
   const webViewRef = useRef<WebView>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -75,12 +76,22 @@ export default function ViewTab() {
   };
 
   const handleTimerComplete = async () => {
-    // Prevent multiple executions
+    // Prevent multiple executions with enhanced checks
     if (isProcessingReward || coinsEarned || !currentVideo || !user) {
+      return;
+    }
+    
+    // Check if this video has already been processed
+    const videoKey = `${currentVideo.video_id}-${user.id}`;
+    if (processedVideos.has(videoKey)) {
+      console.log('⚠️ Video already processed, skipping reward:', videoKey);
       return;
     }
 
     setIsProcessingReward(true);
+    
+    // Mark this video as being processed immediately
+    setProcessedVideos(prev => new Set(prev).add(videoKey));
     
     try {
       console.log('Timer completed - awarding coins for video:', {
@@ -121,10 +132,22 @@ export default function ViewTab() {
         }
       } else {
         console.error('❌ Failed to award coins:', result?.error);
+        // Remove from processed set if failed so user can retry
+        setProcessedVideos(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(videoKey);
+          return newSet;
+        });
         Alert.alert('Error', 'Failed to award coins. Please try again.');
       }
     } catch (error) {
       console.error('Error during timer completion:', error);
+      // Remove from processed set if error occurred
+      setProcessedVideos(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(videoKey);
+        return newSet;
+      });
       if (currentVideo) {
         handleVideoError(currentVideo.video_id);
       }

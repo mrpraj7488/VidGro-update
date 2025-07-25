@@ -91,6 +91,14 @@ export async function updateUserCoins(
   description: string,
   referenceId?: string
 ) {
+  console.log('🎯 updateUserCoins called with:', {
+    userId,
+    amount,
+    transactionType,
+    description,
+    referenceId
+  });
+  
   const { data, error } = await supabase.rpc('update_user_balance_atomic', {
     user_uuid: userId,
     coin_amount: amount,
@@ -104,6 +112,7 @@ export async function updateUserCoins(
     return { success: false, error: error.message };
   }
 
+  console.log('💰 updateUserCoins result:', data);
   return data;
 }
 
