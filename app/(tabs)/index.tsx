@@ -15,13 +15,11 @@ export default function ViewTab() {
   const [watchTimer, setWatchTimer] = useState(0);
   const [targetTimer, setTargetTimer] = useState(0);
   const [autoPlayEnabled, setAutoPlayEnabled] = useState(true);
-  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [isProcessingReward, setIsProcessingReward] = useState(false);
   const [coinsEarned, setCoinsEarned] = useState(false);
-  const [coinRewardProcessed, setCoinRewardProcessed] = useState(false);
 
   const webViewRef = useRef<WebView>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const rewardProcessingRef = useRef(false);
   const currentVideo = getCurrentVideo();
 
   useFocusEffect(
@@ -50,31 +48,25 @@ export default function ViewTab() {
 
     if (!currentVideo) return;
 
-    // Reset states for new video - CRITICAL: Reset all reward processing states
+    // Reset all states for new video
     setCoinsEarned(false);
-    setCoinRewardProcessed(false);
-    rewardProcessingRef.current = false;
-
-    const targetTime = currentVideo.duration_seconds;
-    
-    setTargetTimer(targetTime);
+    setIsProcessingReward(false);
     setWatchTimer(0);
+    setTargetTimer(currentVideo.duration_seconds);
 
+    // Start the timer
     timerRef.current = setInterval(() => {
       setWatchTimer(prev => {
         const newTimer = prev + 1;
         
-        // FIXED: Single execution path with multiple guards
-        if (newTimer >= targetTime && 
-            !coinRewardProcessed && 
-            !rewardProcessingRef.current && 
+        // Check if timer completed and auto-play is enabled
+        if (newTimer >= currentVideo.duration_seconds && 
+            !isProcessingReward && 
+            !coinsEarned && 
             autoPlayEnabled) {
-          // Immediate state update to prevent race conditions
-          setCoinRewardProcessed(true);
-          rewardProcessingRef.current = true;
           
-          // Execute reward logic with slight delay to ensure state is set
-          setTimeout(() => handleTimerComplete(), 50);
+          // Process reward immediately
+          handleTimerComplete();
         }
         
         return newTimer;
@@ -83,93 +75,80 @@ export default function ViewTab() {
   };
 
   const handleTimerComplete = async () => {
-    // CRITICAL: Multiple guards to prevent double execution
-    if (isTransitioning || coinRewardProcessed || rewardProcessingRef.current) {
-      console.log('Timer complete blocked - already processing');
+    // Prevent multiple executions
+    if (isProcessingReward || coinsEarned || !currentVideo || !user) {
       return;
     }
-    
-    // Set all blocking states immediately
-    rewardProcessingRef.current = true;
-    setIsTransitioning(true);
-    setCoinRewardProcessed(true);
+
+    setIsProcessingReward(true);
     
     try {
-      if (currentVideo && user) {
-        console.log('Timer completed - awarding coins for video:', {
-          videoId: currentVideo.video_id,
-          watchTimer,
-          targetTimer,
-          userId: user.id
-        });
-        
-        // Award coins directly using the simple update function
-        const result = await updateUserCoins(
-          user.id,
-          currentVideo.coin_reward,
-          'video_watch',
-          `Watched video: ${currentVideo.title}`,
-          currentVideo.video_id
-        );
-
-        console.log('Coin award result:', result);
-        
-        if (result?.success) {
-          console.log('✅ Coins awarded successfully:', currentVideo.coin_reward);
-          setCoinsEarned(true);
-          
-          // FIXED: Silent profile refresh - no notifications
-          await refreshProfile();
-          
-          // Record the view in database
-          await recordVideoView(currentVideo.video_id, watchTimer, true);
-        } else {
-          console.error('❌ Failed to award coins:', result?.error);
-        }
-      }
+      console.log('Timer completed - awarding coins for video:', {
+        videoId: currentVideo.video_id,
+        watchTimer,
+        targetTimer,
+        userId: user.id
+      });
       
-      // Auto-advance to next video after a brief delay
-      if (autoPlayEnabled) {
-        setTimeout(() => {
-          moveToNextVideo();
-          
-          if (videoQueue.length <= 2 && user) {
-            fetchVideos(user.id);
-          }
-        }, 1500);
+      // Award coins using the optimized function
+      const result = await updateUserCoins(
+        user.id,
+        currentVideo.coin_reward,
+        'video_watch',
+        `Watched video: ${currentVideo.title}`,
+        currentVideo.video_id
+      );
+
+      console.log('Coin award result:', result);
+      
+      if (result?.success) {
+        console.log('✅ Coins awarded successfully:', currentVideo.coin_reward);
+        setCoinsEarned(true);
+        
+        // Refresh profile silently
+        await refreshProfile();
+        
+        // Auto-advance to next video after brief delay
+        if (autoPlayEnabled) {
+          setTimeout(() => {
+            moveToNextVideo();
+            
+            // Fetch more videos if queue is low
+            if (videoQueue.length <= 2 && user) {
+              fetchVideos(user.id);
+            }
+          }, 1500);
+        }
+      } else {
+        console.error('❌ Failed to award coins:', result?.error);
+        Alert.alert('Error', 'Failed to award coins. Please try again.');
       }
     } catch (error) {
       console.error('Error during timer completion:', error);
       if (currentVideo) {
         handleVideoError(currentVideo.video_id);
       }
+      Alert.alert('Error', 'Something went wrong. Please try again.');
     } finally {
-      setIsTransitioning(false);
-      // Keep rewardProcessingRef.current = true to prevent re-execution
-    }
-  };
-
-  const recordVideoView = async (videoId: string, duration: number, completed: boolean) => {
-    try {
-      console.log('Recording video view:', { videoId, duration, completed });
-    } catch (error) {
-      console.error('Error recording video view:', error);
+      setIsProcessingReward(false);
     }
   };
 
   const handleManualSkip = () => {
-    if (isTransitioning) return;
+    if (isProcessingReward) return;
     
     if (watchTimer >= targetTimer || coinsEarned) {
-      // If timer is complete or coins already earned, just move to next
+      // Timer completed or coins earned, move to next
       moveToNextVideo();
       if (videoQueue.length <= 2 && user) {
         fetchVideos(user.id);
       }
     } else {
+      // Timer not completed, ask for confirmation
+      const remainingTime = targetTimer - watchTimer;
       Alert.alert(
         'Skip Video',
-        `You need to watch ${targetTimer - watchTimer} more seconds to earn coins. Skip anyway?`,
+        `You need to watch ${remainingTime} more seconds to earn coins. Skip anyway?`,
         [
           { text: 'Cancel', style: 'cancel' },
           { text: 'Skip', onPress: () => {
@@ -224,13 +203,28 @@ export default function ViewTab() {
     `;
   };
 
-  const getProgressPercentage = () => {
-    if (targetTimer === 0) return 0;
-    return Math.min((watchTimer / targetTimer) * 100, 100);
-  };
-
   const getRemainingTime = () => {
     return Math.max(0, targetTimer - watchTimer);
+  };
+
+  const getButtonState = () => {
+    if (isProcessingReward) {
+      return { text: 'PROCESSING...', style: styles.processingButton, disabled: true };
+    }
+    
+    if (coinsEarned) {
+      return { text: 'COINS EARNED - NEXT VIDEO', style: styles.earnedButton, disabled: false };
+    }
+    
+    if (watchTimer >= targetTimer) {
+      return { text: 'EARN COINS NOW', style: styles.earnButton, disabled: false };
+    }
+    
+    if (autoPlayEnabled) {
+      return { text: `AUTO-EARN IN ${getRemainingTime()}s`, style: styles.waitButton, disabled: true };
+    }
+    
+    return { text: 'SKIP VIDEO', style: styles.waitButton, disabled: false };
   };
 
   if (isLoading) {
@@ -271,6 +265,8 @@ export default function ViewTab() {
     );
   }
 
+  const buttonState = getButtonState();
+
   return (
     <View style={styles.container}>
       <GlobalHeader 
@@ -293,12 +289,6 @@ export default function ViewTab() {
           bounces={false}
           onError={() => currentVideo && handleVideoError(currentVideo.video_id)}
         />
-
-        {isTransitioning && (
-          <View style={styles.loadingOverlay}>
-            <Text style={styles.transitionText}>Loading next video...</Text>
-          </View>
-        )}
       </View>
 
       <View style={styles.controlsContainer}>
@@ -333,19 +323,12 @@ export default function ViewTab() {
         </View>
 
         <TouchableOpacity 
-          style={[
-            styles.skipButton,
-            coinsEarned ? styles.earnedButton : 
-            watchTimer >= targetTimer ? styles.earnButton : styles.waitButton
-          ]}
+          style={[styles.skipButton, buttonState.style]}
           onPress={handleManualSkip}
-          disabled={isTransitioning}
+          disabled={buttonState.disabled}
         >
           <Text style={styles.skipButtonText}>
-            {isTransitioning ? 'LOADING...' : 
-             coinsEarned ? 'COINS EARNED - NEXT VIDEO' :
-             watchTimer >= targetTimer ? 'EARN COINS NOW' : 
-             autoPlayEnabled ? `AUTO-EARN IN ${getRemainingTime()}s` : 'SKIP VIDEO'}
+            {buttonState.text}
           </Text>
         </TouchableOpacity>
       </View>
@@ -397,21 +380,6 @@ const styles = StyleSheet.create({
   },
   webView: {
     flex: 1,
-  },
-  loadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  transitionText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
   },
   controlsContainer: {
     flex: 1,
@@ -500,6 +468,9 @@ const styles = StyleSheet.create({
   },
   waitButton: {
     backgroundColor: '#E0E0E0',
+  },
+  processingButton: {
+    backgroundColor: '#95A5A6',
   },
   skipButtonText: {
     fontSize: 16,
