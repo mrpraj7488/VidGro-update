@@ -17,10 +17,12 @@ export default function ViewTab() {
   const [autoPlayEnabled, setAutoPlayEnabled] = useState(true);
   const [isProcessingReward, setIsProcessingReward] = useState(false);
   const [coinsEarned, setCoinsEarned] = useState(false);
-  const [processedVideos, setProcessedVideos] = useState<Set<string>>(new Set());
+  const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
+  const [rewardProcessed, setRewardProcessed] = useState(false);
 
   const webViewRef = useRef<WebView>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const rewardProcessingRef = useRef<boolean>(false);
   const currentVideo = getCurrentVideo();
 
   useFocusEffect(
@@ -33,6 +35,15 @@ export default function ViewTab() {
 
   useEffect(() => {
     if (currentVideo) {
+      // Reset all states when video changes
+      if (currentVideoId !== currentVideo.video_id) {
+        console.log('🎬 New video loaded:', currentVideo.video_id);
+        setCurrentVideoId(currentVideo.video_id);
+        setRewardProcessed(false);
+        rewardProcessingRef.current = false;
+        setIsProcessingReward(false);
+        setCoinsEarned(false);
+      }
       initializeTimer();
     }
     return () => {
@@ -40,7 +51,7 @@ export default function ViewTab() {
         clearInterval(timerRef.current);
       }
     };
-  }, [currentVideo]);
+  }, [currentVideo, currentVideoId]);
 
   const initializeTimer = () => {
     if (timerRef.current) {
@@ -49,24 +60,30 @@ export default function ViewTab() {
 
     if (!currentVideo) return;
 
-    // Reset all states for new video
-    setCoinsEarned(false);
-    setIsProcessingReward(false);
+    // Only reset timer-related states, not reward states
     setWatchTimer(0);
     setTargetTimer(currentVideo.duration_seconds);
+
+    console.log('⏱️ Timer initialized:', {
+      videoId: currentVideo.video_id,
+      duration: currentVideo.duration_seconds,
+      rewardProcessed,
+      isProcessingReward
+    });
 
     // Start the timer
     timerRef.current = setInterval(() => {
       setWatchTimer(prev => {
         const newTimer = prev + 1;
         
-        // Check if timer completed and auto-play is enabled
+        // Check if timer completed, auto-play enabled, and reward not processed
         if (newTimer >= currentVideo.duration_seconds && 
             !isProcessingReward && 
-            !coinsEarned && 
+            !rewardProcessed && 
+            !rewardProcessingRef.current &&
             autoPlayEnabled) {
           
-          // Process reward immediately
+          console.log('⏰ Timer completed, processing reward...');
           handleTimerComplete();
         }
         
@@ -76,31 +93,31 @@ export default function ViewTab() {
   };
 
   const handleTimerComplete = async () => {
-    // Prevent multiple executions with enhanced checks
-    if (isProcessingReward || coinsEarned || !currentVideo || !user) {
-      return;
-    }
-    
-    // Check if this video has already been processed
-    const videoKey = `${currentVideo.video_id}-${user.id}`;
-    if (processedVideos.has(videoKey)) {
-      console.log('⚠️ Video already processed, skipping reward:', videoKey);
-      return;
-    }
-
-    setIsProcessingReward(true);
-    
-    // Mark this video as being processed immediately
-    setProcessedVideos(prev => new Set(prev).add(videoKey));
-    
-    try {
-      console.log('Timer completed - awarding coins for video:', {
-        videoId: currentVideo.video_id,
-        watchTimer,
-        targetTimer,
-        userId: user.id
+    // CRITICAL: Prevent multiple executions with multiple checks
+    if (rewardProcessingRef.current || isProcessingReward || rewardProcessed || !currentVideo || !user) {
+      console.log('⚠️ Reward processing blocked:', {
+        rewardProcessingRef: rewardProcessingRef.current,
+        isProcessingReward,
+        rewardProcessed,
+        hasVideo: !!currentVideo,
+        hasUser: !!user
       });
-      
+      return;
+    }
+    
+    // Set processing flags immediately
+    rewardProcessingRef.current = true;
+    setIsProcessingReward(true);
+    setRewardProcessed(true);
+
+    console.log('🎯 Processing reward for video:', {
+      videoId: currentVideo.video_id,
+      watchTimer,
+      targetTimer: currentVideo.duration_seconds,
+      userId: user.id
+    });
+
+    try {
       // Award coins using the optimized function
       const result = await updateUserCoins(
         user.id,
@@ -132,35 +149,30 @@ export default function ViewTab() {
         }
       } else {
         console.error('❌ Failed to award coins:', result?.error);
-        // Remove from processed set if failed so user can retry
-        setProcessedVideos(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(videoKey);
-          return newSet;
-        });
+        // Reset processing flags if failed so user can retry
+        setRewardProcessed(false);
+        rewardProcessingRef.current = false;
         Alert.alert('Error', 'Failed to award coins. Please try again.');
       }
     } catch (error) {
       console.error('Error during timer completion:', error);
-      // Remove from processed set if error occurred
-      setProcessedVideos(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(videoKey);
-        return newSet;
-      });
+      // Reset processing flags if error occurred
+      setRewardProcessed(false);
+      rewardProcessingRef.current = false;
       if (currentVideo) {
         handleVideoError(currentVideo.video_id);
       }
       Alert.alert('Error', 'Something went wrong. Please try again.');
     } finally {
       setIsProcessingReward(false);
+      rewardProcessingRef.current = false;
     }
   };
 
   const handleManualSkip = () => {
-    if (isProcessingReward) return;
+    if (isProcessingReward || rewardProcessingRef.current) return;
     
-    if (watchTimer >= targetTimer || coinsEarned) {
+    if (watchTimer >= targetTimer || rewardProcessed) {
       // Timer completed or coins earned, move to next
       moveToNextVideo();
       if (videoQueue.length <= 2 && user) {
@@ -175,6 +187,10 @@ export default function ViewTab() {
         [
           { text: 'Cancel', style: 'cancel' },
           { text: 'Skip', onPress: () => {
+            // Reset states when manually skipping
+            setRewardProcessed(false);
+            rewardProcessingRef.current = false;
+            setCoinsEarned(false);
             moveToNextVideo();
             if (videoQueue.length <= 2 && user) {
               fetchVideos(user.id);
@@ -235,12 +251,16 @@ export default function ViewTab() {
       return { text: 'PROCESSING...', style: styles.processingButton, disabled: true };
     }
     
-    if (coinsEarned) {
+    if (rewardProcessed && coinsEarned) {
       return { text: 'COINS EARNED - NEXT VIDEO', style: styles.earnedButton, disabled: false };
     }
     
     if (watchTimer >= targetTimer) {
-      return { text: 'EARN COINS NOW', style: styles.earnButton, disabled: false };
+      if (!rewardProcessed) {
+        return { text: 'EARN COINS NOW', style: styles.earnButton, disabled: false };
+      } else {
+        return { text: 'PROCESSING...', style: styles.processingButton, disabled: true };
+      }
     }
     
     if (autoPlayEnabled) {
@@ -329,10 +349,10 @@ export default function ViewTab() {
         <View style={styles.statsContainer}>
           <View style={styles.statItem}>
             <Text style={[styles.statNumber, coinsEarned && styles.statNumberEarned]}>
-              {coinsEarned ? '✓' : getRemainingTime()}
+              {rewardProcessed && coinsEarned ? '✓' : getRemainingTime()}
             </Text>
             <Text style={styles.statLabel}>
-              {coinsEarned ? 'Coins Earned!' : 'Seconds to earn coins'}
+              {rewardProcessed && coinsEarned ? 'Coins Earned!' : 'Seconds to earn coins'}
             </Text>
           </View>
           <View style={styles.statItem}>
@@ -340,7 +360,7 @@ export default function ViewTab() {
               {currentVideo.coin_reward}
             </Text>
             <Text style={styles.statLabel}>
-              {coinsEarned ? 'Coins Added' : 'Coins to earn'}
+              {rewardProcessed && coinsEarned ? 'Coins Added' : 'Coins to earn'}
             </Text>
           </View>
         </View>

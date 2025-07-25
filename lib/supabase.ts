@@ -99,6 +99,27 @@ export async function updateUserCoins(
     referenceId
   });
   
+  // CRITICAL: Check for existing transaction to prevent duplicates
+  if (referenceId && transactionType === 'video_watch') {
+    const { data: existingTransaction, error: checkError } = await supabase
+      .from('coin_transactions')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('reference_id', referenceId)
+      .eq('transaction_type', 'video_watch')
+      .limit(1);
+    
+    if (checkError) {
+      console.error('Error checking for duplicate transaction:', checkError);
+      return { success: false, error: checkError.message };
+    }
+    
+    if (existingTransaction && existingTransaction.length > 0) {
+      console.log('⚠️ Duplicate transaction prevented for video:', referenceId);
+      return { success: false, error: 'Coins already awarded for this video' };
+    }
+  }
+  
   const { data, error } = await supabase.rpc('update_user_balance_atomic', {
     user_uuid: userId,
     coin_amount: amount,

@@ -66,6 +66,12 @@ export const useVideoStore = create<VideoState>((set, get) => ({
 
   moveToNextVideo: () => {
     const { videoQueue, currentVideoIndex } = get();
+    console.log('📱 Moving to next video:', {
+      currentIndex: currentVideoIndex,
+      queueLength: videoQueue.length,
+      nextIndex: currentVideoIndex + 1
+    });
+    
     if (currentVideoIndex < videoQueue.length - 1) {
       set({ currentVideoIndex: currentVideoIndex + 1 });
     } else {
@@ -76,6 +82,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
 
   handleVideoError: (videoId: string) => {
     const { blacklistedVideoIds } = get();
+    console.log('❌ Handling video error for:', videoId);
     set({ 
       blacklistedVideoIds: [...blacklistedVideoIds, videoId] 
     });
@@ -83,6 +90,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
   },
 
   resetQueue: () => {
+    console.log('🔄 Resetting video queue');
     set({ 
       videoQueue: [], 
       currentVideoIndex: 0, 
@@ -92,7 +100,7 @@ export const useVideoStore = create<VideoState>((set, get) => ({
   },
 
   clearQueue: () => {
-    console.log('Video queue cleared - forcing refresh');
+    console.log('🗑️ Video queue cleared - forcing refresh');
     set({ 
       videoQueue: [], 
       currentVideoIndex: 0, 
