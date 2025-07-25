@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { supabase, getBalanceSystemMetrics } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { BarChart3, Database, Zap, TrendingUp, RefreshCw } from 'lucide-react-native';
+import { ChartBar as BarChart3, Database, Zap, TrendingUp, RefreshCw } from 'lucide-react-native';
 
 interface BalanceMetrics {
   old_system_size_bytes: number;
