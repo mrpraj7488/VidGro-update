@@ -30,6 +30,7 @@ export default function MoreTab() {
     { icon: Crown, title: 'Become VIP', subtitle: 'Premium Access', route: '/become-vip' },
     { icon: ShieldOff, title: 'Stop Ads', subtitle: '5 Hours Ad-Free', route: '/configure-ads' },
     { icon: Star, title: 'Rate Us', subtitle: 'Get 100 Coins', route: '/rate-us' },
+    { icon: BarChart3, title: 'System Monitor', subtitle: 'Performance Metrics', route: '/balance-monitor' },
   ];
 
   const sideMenuItems = [

@@ -91,7 +91,7 @@ export async function updateUserCoins(
   description: string,
   referenceId?: string
 ) {
-  const { data, error } = await supabase.rpc('update_user_coins_improved', {
+  const { data, error } = await supabase.rpc('update_user_balance_atomic', {
     user_uuid: userId,
     coin_amount: amount,
     transaction_type_param: transactionType,
@@ -102,6 +102,36 @@ export async function updateUserCoins(
   if (error) {
     console.error('Error updating user coins:', error);
     return { success: false, error: error.message };
+  }
+
+  return data;
+}
+
+// Helper function to get user balance quickly
+export async function getUserBalanceFast(userId: string) {
+  const { data, error } = await supabase.rpc('get_user_balance_fast', {
+    user_uuid: userId
+  });
+
+  if (error) {
+    console.error('Error fetching user balance:', error);
+    return null;
+  }
+
+  return data;
+}
+
+// Helper function to get transaction history from audit log
+export async function getUserTransactionHistory(userId: string, limit: number = 50, offset: number = 0) {
+  const { data, error } = await supabase.rpc('get_user_transaction_history', {
+    user_uuid: userId,
+    limit_count: limit,
+    offset_count: offset
+  });
+
+  if (error) {
+    console.error('Error fetching transaction history:', error);
+    return null;
   }
 
   return data;
@@ -127,13 +157,13 @@ export async function awardCoinsSimpleTimer(
   videoId: string,
   watchDuration: number
 ) {
-  console.log('🎯 Calling award_coins_simple_timer with:', {
+  console.log('🎯 Calling award_coins_optimized with:', {
     userId,
     videoId,
     watchDuration
   });
   
-  const { data, error } = await supabase.rpc('award_coins_simple_timer', {
+  const { data, error } = await supabase.rpc('award_coins_optimized', {
     user_uuid: userId,
     video_uuid: videoId,
     watch_duration: watchDuration
@@ -168,7 +198,7 @@ export async function createVideoWithHold(
     videoId
   });
 
-  const { data, error } = await supabase.rpc('create_video_with_hold', {
+  const { data, error } = await supabase.rpc('create_video_optimized', {
     coin_cost_param: coinCost,
     coin_reward_param: coinReward,
     duration_seconds_param: durationSeconds,
@@ -180,6 +210,18 @@ export async function createVideoWithHold(
 
   if (error) {
     console.error('Error creating video:', error);
+    return null;
+  }
+
+  return data;
+}
+
+// Helper function to get balance system performance metrics
+export async function getBalanceSystemMetrics() {
+  const { data, error } = await supabase.rpc('get_balance_system_metrics');
+
+  if (error) {
+    console.error('Error fetching balance system metrics:', error);
     return null;
   }
 
@@ -203,9 +245,10 @@ export async function getVideoAnalytics(videoId: string, userId: string) {
 
 // Helper function to get recent activity
 export async function getRecentActivity(userId: string, limit: number = 10) {
-  const { data, error } = await supabase.rpc('get_recent_activity', {
+  const { data, error } = await supabase.rpc('get_user_transaction_history', {
     user_uuid: userId,
-    activity_limit: limit
+    limit_count: limit,
+    offset_count: 0
   });
 
   if (error) {

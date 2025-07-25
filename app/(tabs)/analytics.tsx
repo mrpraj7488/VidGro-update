@@ -98,12 +98,20 @@ export default function Analytics() {
 
       // Fetch recent activity (excluding video_watch rewards)
       const { data: activityData, error: activityError } = await supabase
-        .rpc('get_recent_activity', { user_uuid: user.id, activity_limit: 10 });
+        .rpc('get_user_transaction_history', { 
+          user_uuid: user.id, 
+          limit_count: 10,
+          offset_count: 0
+        });
 
       if (activityError) {
         console.error('Activity error:', activityError);
       } else if (activityData) {
-        setRecentActivity(activityData);
+        // Filter out video_watch transactions for cleaner activity feed
+        const filteredActivity = activityData.filter((activity: any) => 
+          activity.transaction_type !== 'video_watch'
+        );
+        setRecentActivity(filteredActivity);
       }
 
       // Fetch user's videos with analytics

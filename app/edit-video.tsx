@@ -346,7 +346,7 @@ export default function EditVideoScreen() {
             try {
               // Use the new delete function with proper refund handling
               const { data: deleteResult, error: deleteError } = await supabase
-                .rpc('delete_video_with_refund', {
+                .rpc('delete_video_optimized', {
                   video_uuid: videoData.id,
                   user_uuid: user.id
                 });
@@ -371,7 +371,7 @@ export default function EditVideoScreen() {
 
               Alert.alert(
                 'Success', 
-                deleteResult.message || `Video deleted and 🪙${deleteResult.refund_amount} coins refunded!`, 
+                deleteResult.message || `Video deleted and 🪙${deleteResult.refund_amount} coins refunded! New balance: 🪙${deleteResult.new_balance}`, 
                 [
                 { text: 'OK', onPress: () => router.back() }
               ]);
@@ -423,22 +423,9 @@ export default function EditVideoScreen() {
     try {
       const coinCost = calculateCoinCost(selectedViews, selectedDuration);
       
-      // Check if user has enough coins
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('coins')
-        .eq('id', user.id)
-        .single();
-      
-      if ((profileData?.coins || 0) < coinCost) {
-        Alert.alert('Insufficient Coins', `You need 🪙${coinCost} coins to repromote this video.`);
-        setRepromoting(false);
-        return;
-      }
-
-      // Deduct coins for repromotion
-      const { error: coinError } = await supabase
-        .rpc('update_user_coins', {
+      // Deduct coins for repromotion using optimized system
+      const { data: balanceResult, error: coinError } = await supabase
+        .rpc('update_user_balance_atomic', {
           user_uuid: user.id,
           coin_amount: -coinCost,
           transaction_type_param: 'video_promotion',
@@ -446,7 +433,15 @@ export default function EditVideoScreen() {
           reference_uuid: videoData.id
         });
 
-      if (coinError) throw coinError;
+      if (coinError) {
+        throw new Error(coinError.message);
+      }
+
+      if (!balanceResult?.success) {
+        Alert.alert('Insufficient Coins', balanceResult?.error || `You need 🪙${coinCost} coins to repromote this video.`);
+        setRepromoting(false);
+        return;
+      }
 
       // Clear existing views for this video
       const { error: clearViewsError } = await supabase
@@ -481,7 +476,7 @@ export default function EditVideoScreen() {
 
       Alert.alert(
         'Success',
-        `Video repromoted successfully! It's now active in the queue with ${selectedViews} target views.`,
+        `Video repromoted successfully! It's now active in the queue with ${selectedViews} target views. New balance: 🪙${balanceResult.new_balance}`,
         [{ text: 'OK', onPress: handleNavigateBack }]
       );
     } catch (error) {
