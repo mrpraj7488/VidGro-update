@@ -1,5 +1,5 @@
 /*
-  # Comprehensive Database Cleanup and Optimization
+  # Comprehensive Database Cleanup and Optimization - FIXED VERSION
   
   This migration addresses several critical issues:
   1. Removes transaction_audit_log table (redundant with coin_transactions)
@@ -19,20 +19,108 @@
 */
 
 -- ============================================================================
--- DROP REDUNDANT TABLES AND CLEANUP
+-- DROP ALL EXISTING FUNCTIONS FIRST TO AVOID TYPE CONFLICTS
 -- ============================================================================
 
--- Drop the redundant transaction_audit_log table
-DROP TABLE IF EXISTS transaction_audit_log CASCADE;
+-- Drop all existing functions that might have different signatures
+DROP FUNCTION IF EXISTS get_user_transaction_history(uuid, integer, integer) CASCADE;
+DROP FUNCTION IF EXISTS get_user_transaction_history(uuid) CASCADE;
+DROP FUNCTION IF EXISTS update_user_balance_atomic(uuid, integer, text, text, uuid) CASCADE;
+DROP FUNCTION IF EXISTS update_user_balance_atomic(uuid, integer, text, text) CASCADE;
+DROP FUNCTION IF EXISTS award_coins_optimized(uuid, uuid, integer) CASCADE;
+DROP FUNCTION IF EXISTS create_video_optimized(integer, integer, integer, integer, text, uuid, text) CASCADE;
+DROP FUNCTION IF EXISTS delete_video_optimized(uuid, uuid) CASCADE;
+DROP FUNCTION IF EXISTS get_user_analytics_summary_fixed(uuid) CASCADE;
+DROP FUNCTION IF EXISTS get_user_analytics_summary(uuid) CASCADE;
+
+-- Drop helper functions with all possible signatures
+DROP FUNCTION IF EXISTS initialize_user_balance(uuid) CASCADE;
+DROP FUNCTION IF EXISTS calculate_refund_amount(timestamptz, integer) CASCADE;
+DROP FUNCTION IF EXISTS calculate_refund_amount(timestamp with time zone, integer) CASCADE;
+DROP FUNCTION IF EXISTS check_and_update_expired_holds() CASCADE;
 
 -- Drop unused functions that were creating complexity
 DROP FUNCTION IF EXISTS migrate_coin_transactions_to_balances() CASCADE;
 DROP FUNCTION IF EXISTS validate_balance_migration() CASCADE;
 DROP FUNCTION IF EXISTS get_balance_system_metrics() CASCADE;
 DROP FUNCTION IF EXISTS sync_profile_balance_to_user_balances() CASCADE;
+DROP FUNCTION IF EXISTS update_user_coins_improved(uuid, integer, text, text, uuid) CASCADE;
+DROP FUNCTION IF EXISTS award_coins_for_video_completion(uuid, uuid, integer) CASCADE;
+DROP FUNCTION IF EXISTS award_coins_simple_timer(uuid, uuid, integer) CASCADE;
+DROP FUNCTION IF EXISTS get_recent_activity(uuid, integer) CASCADE;
+DROP FUNCTION IF EXISTS create_video_with_hold(integer, integer, integer, integer, text, uuid, text) CASCADE;
+DROP FUNCTION IF EXISTS delete_video_with_refund(uuid, uuid) CASCADE;
+
+-- Drop any other potential function variants
+DROP FUNCTION IF EXISTS calculate_refund_amount(timestamp with time zone, integer, text) CASCADE;
+DROP FUNCTION IF EXISTS calculate_refund_amount(timestamptz, integer, text) CASCADE;
+DROP FUNCTION IF EXISTS update_user_balance(uuid, integer, text, text, uuid) CASCADE;
+DROP FUNCTION IF EXISTS update_user_balance(uuid, integer, text, text) CASCADE;
+DROP FUNCTION IF EXISTS initialize_balance(uuid) CASCADE;
+DROP FUNCTION IF EXISTS check_expired_holds() CASCADE;
 
 -- Drop redundant triggers
-DROP TRIGGER IF EXISTS sync_profile_balance_trigger ON profiles;
+DROP TRIGGER IF EXISTS sync_profile_balance_trigger ON profiles CASCADE;
+
+-- ============================================================================
+-- DROP REDUNDANT TABLES AND CLEANUP
+-- ============================================================================
+
+-- Drop the redundant transaction_audit_log table
+DROP TABLE IF EXISTS transaction_audit_log CASCADE;
+
+-- ============================================================================
+-- ENSURE REQUIRED HELPER FUNCTIONS EXIST
+-- ============================================================================
+
+-- Create helper function to initialize user balance if it doesn't exist
+CREATE OR REPLACE FUNCTION initialize_user_balance(user_uuid uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+    INSERT INTO user_balances (user_id, current_balance, version_number, last_transaction_at)
+    SELECT user_uuid, COALESCE(p.coins, 0), 1, now()
+    FROM profiles p
+    WHERE p.id = user_uuid
+    ON CONFLICT (user_id) DO NOTHING;
+END;
+$$;
+
+-- Create helper function to calculate refund amount
+CREATE OR REPLACE FUNCTION calculate_refund_amount(created_at timestamptz, original_cost integer)
+RETURNS integer
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+DECLARE
+    minutes_since_creation integer;
+BEGIN
+    minutes_since_creation := EXTRACT(EPOCH FROM (now() - created_at)) / 60;
+    
+    -- 100% refund within 10 minutes, 80% after
+    IF minutes_since_creation <= 10 THEN
+        RETURN original_cost;
+    ELSE
+        RETURN FLOOR(original_cost * 0.8);
+    END IF;
+END;
+$$;
+
+-- Create helper function to check and update expired holds
+CREATE OR REPLACE FUNCTION check_and_update_expired_holds()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+    UPDATE videos 
+    SET status = 'active', updated_at = now()
+    WHERE status = 'on_hold' 
+    AND hold_until <= now();
+END;
+$$;
 
 -- ============================================================================
 -- OPTIMIZED BALANCE MANAGEMENT (SINGLE SOURCE OF TRUTH)
@@ -531,30 +619,6 @@ END;
 $$;
 
 -- ============================================================================
--- REMOVE UNUSED/DUPLICATE FUNCTIONS
--- ============================================================================
-
--- Remove old functions that are no longer needed
-DROP FUNCTION IF EXISTS update_user_coins_improved(uuid, integer, text, text, uuid) CASCADE;
-DROP FUNCTION IF EXISTS award_coins_for_video_completion(uuid, uuid, integer) CASCADE;
-DROP FUNCTION IF EXISTS award_coins_simple_timer(uuid, uuid, integer) CASCADE;
-DROP FUNCTION IF EXISTS get_recent_activity(uuid, integer) CASCADE;
-DROP FUNCTION IF EXISTS create_video_with_hold(integer, integer, integer, integer, text, uuid, text) CASCADE;
-DROP FUNCTION IF EXISTS delete_video_with_refund(uuid, uuid) CASCADE;
-
--- ============================================================================
--- PERMISSIONS
--- ============================================================================
-
--- Grant execute permissions to authenticated users for active functions only
-GRANT EXECUTE ON FUNCTION update_user_balance_atomic(uuid, integer, text, text, uuid) TO authenticated;
-GRANT EXECUTE ON FUNCTION get_user_transaction_history(uuid, integer, integer) TO authenticated;
-GRANT EXECUTE ON FUNCTION award_coins_optimized(uuid, uuid, integer) TO authenticated;
-GRANT EXECUTE ON FUNCTION create_video_optimized(integer, integer, integer, integer, text, uuid, text) TO authenticated;
-GRANT EXECUTE ON FUNCTION delete_video_optimized(uuid, uuid) TO authenticated;
-GRANT EXECUTE ON FUNCTION get_user_analytics_summary_fixed(uuid) TO authenticated;
-
--- ============================================================================
 -- CLEANUP INDEXES FOR DROPPED TABLE
 -- ============================================================================
 
@@ -564,12 +628,45 @@ DROP INDEX IF EXISTS idx_transaction_audit_reference;
 DROP INDEX IF EXISTS idx_transaction_audit_created_at;
 
 -- ============================================================================
+-- PERMISSIONS
+-- ============================================================================
+
+-- Grant execute permissions to authenticated users for active functions only
+GRANT EXECUTE ON FUNCTION initialize_user_balance(uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION calculate_refund_amount(timestamptz, integer) TO authenticated;
+GRANT EXECUTE ON FUNCTION check_and_update_expired_holds() TO authenticated;
+GRANT EXECUTE ON FUNCTION update_user_balance_atomic(uuid, integer, text, text, uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION get_user_transaction_history(uuid, integer, integer) TO authenticated;
+GRANT EXECUTE ON FUNCTION award_coins_optimized(uuid, uuid, integer) TO authenticated;
+GRANT EXECUTE ON FUNCTION create_video_optimized(integer, integer, integer, integer, text, uuid, text) TO authenticated;
+GRANT EXECUTE ON FUNCTION delete_video_optimized(uuid, uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION get_user_analytics_summary_fixed(uuid) TO authenticated;
+
+-- ============================================================================
+-- ADD MISSING CONSTRAINT IF NEEDED
+-- ============================================================================
+
+-- Ensure unique constraint exists on video_views to prevent duplicate views
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints 
+        WHERE constraint_name = 'video_views_video_viewer_unique' 
+        AND table_name = 'video_views'
+    ) THEN
+        ALTER TABLE video_views 
+        ADD CONSTRAINT video_views_video_viewer_unique 
+        UNIQUE (video_id, viewer_id);
+    END IF;
+END $$;
+
+-- ============================================================================
 -- COMPLETION MESSAGE
 -- ============================================================================
 
 DO $$
 BEGIN
-    RAISE NOTICE '🎉 Comprehensive Database Cleanup Completed!';
+    RAISE NOTICE '🎉 Comprehensive Database Cleanup Completed Successfully!';
     RAISE NOTICE '';
     RAISE NOTICE '🗑️ Removed Components:';
     RAISE NOTICE '  ✓ Dropped transaction_audit_log table (redundant)';
@@ -577,6 +674,7 @@ BEGIN
     RAISE NOTICE '  ✓ Cleaned up redundant triggers and indexes';
     RAISE NOTICE '';
     RAISE NOTICE '🔧 Fixed Issues:';
+    RAISE NOTICE '  ✓ Fixed function signature conflicts';
     RAISE NOTICE '  ✓ Prevented duplicate coin rewards';
     RAISE NOTICE '  ✓ Filtered video_watch from transaction history';
     RAISE NOTICE '  ✓ Optimized database calls and performance';
@@ -596,6 +694,7 @@ BEGIN
     RAISE NOTICE '  ✓ Reduced database calls';
     RAISE NOTICE '  ✓ Improved concurrent user handling';
     RAISE NOTICE '  ✓ Enhanced duplicate prevention';
+    RAISE NOTICE '  ✓ Added missing helper functions';
     RAISE NOTICE '';
     RAISE NOTICE '✅ Database is now optimized and ready for production!';
 END $$;
