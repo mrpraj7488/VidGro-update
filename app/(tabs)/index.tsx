@@ -50,7 +50,7 @@ export default function ViewTab() {
 
     if (!currentVideo) return;
 
-    // Reset states for new video
+    // Reset states for new video - CRITICAL: Reset all reward processing states
     setCoinsEarned(false);
     setCoinRewardProcessed(false);
     rewardProcessingRef.current = false;
@@ -64,9 +64,17 @@ export default function ViewTab() {
       setWatchTimer(prev => {
         const newTimer = prev + 1;
         
-        // When timer reaches target, automatically earn coins (only once)
-        if (newTimer >= targetTime && !coinRewardProcessed && !rewardProcessingRef.current && autoPlayEnabled) {
-          setTimeout(() => handleTimerComplete(), 100);
+        // FIXED: Single execution path with multiple guards
+        if (newTimer >= targetTime && 
+            !coinRewardProcessed && 
+            !rewardProcessingRef.current && 
+            autoPlayEnabled) {
+          // Immediate state update to prevent race conditions
+          setCoinRewardProcessed(true);
+          rewardProcessingRef.current = true;
+          
+          // Execute reward logic with slight delay to ensure state is set
+          setTimeout(() => handleTimerComplete(), 50);
         }
         
         return newTimer;
@@ -75,9 +83,13 @@ export default function ViewTab() {
   };
 
   const handleTimerComplete = async () => {
-    // Prevent multiple executions
-    if (isTransitioning || coinRewardProcessed || rewardProcessingRef.current) return;
+    // CRITICAL: Multiple guards to prevent double execution
+    if (isTransitioning || coinRewardProcessed || rewardProcessingRef.current) {
+      console.log('Timer complete blocked - already processing');
+      return;
+    }
     
+    // Set all blocking states immediately
     rewardProcessingRef.current = true;
     setIsTransitioning(true);
     setCoinRewardProcessed(true);
@@ -106,7 +118,7 @@ export default function ViewTab() {
           console.log('✅ Coins awarded successfully:', currentVideo.coin_reward);
           setCoinsEarned(true);
           
-          // Refresh profile silently in background
+          // FIXED: Silent profile refresh - no notifications
           await refreshProfile();
           
           // Record the view in database
@@ -133,7 +145,7 @@ export default function ViewTab() {
       }
     } finally {
       setIsTransitioning(false);
-      rewardProcessingRef.current = false;
+      // Keep rewardProcessingRef.current = true to prevent re-execution
     }
   };
 
@@ -199,16 +211,6 @@ export default function ViewTab() {
           * { margin: 0; padding: 0; box-sizing: border-box; }
           body { background: #000; overflow: hidden; position: fixed; width: 100%; height: 100%; }
           iframe { width: 100%; height: 100%; border: none; }
-          .security-overlay { 
-            position: absolute; 
-            top: 0; 
-            left: 0; 
-            right: 0; 
-            bottom: 0; 
-            z-index: 1000; 
-            background: transparent;
-            pointer-events: none;
-          }
         </style>
       </head>
       <body>
@@ -217,7 +219,6 @@ export default function ViewTab() {
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           allowfullscreen>
         </iframe>
-        <div class="security-overlay"></div>
       </body>
       </html>
     `;
@@ -292,26 +293,6 @@ export default function ViewTab() {
           bounces={false}
           onError={() => currentVideo && handleVideoError(currentVideo.video_id)}
         />
-
-        {/* Simple progress overlay - no custom controls */}
-        <View style={styles.progressOverlay}>
-          <View style={styles.progressContainer}>
-            <View style={styles.progressBar}>
-              <View 
-                style={[
-                  styles.progressFill, 
-                  { 
-                    width: `${getProgressPercentage()}%`,
-                    backgroundColor: coinsEarned ? '#FFD700' : '#2ECC71'
-                  }
-                ]} 
-              />
-            </View>
-            <Text style={styles.progressText}>
-              {formatTime(watchTimer)} / {formatTime(targetTimer)}
-            </Text>
-          </View>
-        </View>
 
         {isTransitioning && (
           <View style={styles.loadingOverlay}>
@@ -416,35 +397,6 @@ const styles = StyleSheet.create({
   },
   webView: {
     flex: 1,
-  },
-  progressOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    padding: 12,
-  },
-  progressContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  progressBar: {
-    flex: 1,
-    height: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    borderRadius: 2,
-    marginRight: 8,
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 2,
-  },
-  progressText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: '600',
-    minWidth: 80,
   },
   loadingOverlay: {
     position: 'absolute',
