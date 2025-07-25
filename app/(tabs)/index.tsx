@@ -5,7 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useVideoStore } from '../../store/videoStore';
 import { updateUserCoins } from '../../lib/supabase';
 import GlobalHeader from '../../components/GlobalHeader';
-import { ExternalLink, Play, Pause, SkipForward, Volume2, VolumeX } from 'lucide-react-native';
+import { ExternalLink } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
 
 export default function ViewTab() {
@@ -15,13 +15,13 @@ export default function ViewTab() {
   const [watchTimer, setWatchTimer] = useState(0);
   const [targetTimer, setTargetTimer] = useState(0);
   const [autoPlayEnabled, setAutoPlayEnabled] = useState(true);
-  const [isPlaying, setIsPlaying] = useState(true);
-  const [isMuted, setIsMuted] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [coinsEarned, setCoinsEarned] = useState(false);
+  const [coinRewardProcessed, setCoinRewardProcessed] = useState(false);
 
   const webViewRef = useRef<WebView>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const rewardProcessingRef = useRef(false);
   const currentVideo = getCurrentVideo();
 
   useFocusEffect(
@@ -50,19 +50,22 @@ export default function ViewTab() {
 
     if (!currentVideo) return;
 
-    // Simple timer - just use the video duration as target
+    // Reset states for new video
+    setCoinsEarned(false);
+    setCoinRewardProcessed(false);
+    rewardProcessingRef.current = false;
+
     const targetTime = currentVideo.duration_seconds;
     
     setTargetTimer(targetTime);
     setWatchTimer(0);
-    setCoinsEarned(false);
 
     timerRef.current = setInterval(() => {
       setWatchTimer(prev => {
         const newTimer = prev + 1;
         
-        // When timer reaches target, automatically earn coins
-        if (newTimer >= targetTime && !coinsEarned && autoPlayEnabled) {
+        // When timer reaches target, automatically earn coins (only once)
+        if (newTimer >= targetTime && !coinRewardProcessed && !rewardProcessingRef.current && autoPlayEnabled) {
           setTimeout(() => handleTimerComplete(), 100);
         }
         
@@ -72,10 +75,12 @@ export default function ViewTab() {
   };
 
   const handleTimerComplete = async () => {
-    if (isTransitioning || coinsEarned) return;
+    // Prevent multiple executions
+    if (isTransitioning || coinRewardProcessed || rewardProcessingRef.current) return;
     
+    rewardProcessingRef.current = true;
     setIsTransitioning(true);
-    setCoinsEarned(true);
+    setCoinRewardProcessed(true);
     
     try {
       if (currentVideo && user) {
@@ -99,6 +104,9 @@ export default function ViewTab() {
         
         if (result?.success) {
           console.log('✅ Coins awarded successfully:', currentVideo.coin_reward);
+          setCoinsEarned(true);
+          
+          // Refresh profile silently in background
           await refreshProfile();
           
           // Record the view in database
@@ -108,7 +116,7 @@ export default function ViewTab() {
         }
       }
       
-      // Auto-advance to next video
+      // Auto-advance to next video after a brief delay
       if (autoPlayEnabled) {
         setTimeout(() => {
           moveToNextVideo();
@@ -116,7 +124,7 @@ export default function ViewTab() {
           if (videoQueue.length <= 2 && user) {
             fetchVideos(user.id);
           }
-        }, 1000);
+        }, 1500);
       }
     } catch (error) {
       console.error('Error during timer completion:', error);
@@ -125,12 +133,12 @@ export default function ViewTab() {
       }
     } finally {
       setIsTransitioning(false);
+      rewardProcessingRef.current = false;
     }
   };
 
   const recordVideoView = async (videoId: string, duration: number, completed: boolean) => {
     try {
-      // This is a simplified view recording - in a real app you'd have a proper function
       console.log('Recording video view:', { videoId, duration, completed });
     } catch (error) {
       console.error('Error recording video view:', error);
@@ -163,26 +171,6 @@ export default function ViewTab() {
     }
   };
 
-  const togglePlayPause = () => {
-    const newPlayState = !isPlaying;
-    setIsPlaying(newPlayState);
-    
-    if (webViewRef.current) {
-      const command = newPlayState ? 'play' : 'pause';
-      webViewRef.current.postMessage(JSON.stringify({ action: command }));
-    }
-  };
-
-  const toggleMute = () => {
-    const newMuteState = !isMuted;
-    setIsMuted(newMuteState);
-    
-    if (webViewRef.current) {
-      const command = newMuteState ? 'mute' : 'unmute';
-      webViewRef.current.postMessage(JSON.stringify({ action: command }));
-    }
-  };
-
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -211,16 +199,25 @@ export default function ViewTab() {
           * { margin: 0; padding: 0; box-sizing: border-box; }
           body { background: #000; overflow: hidden; position: fixed; width: 100%; height: 100%; }
           iframe { width: 100%; height: 100%; border: none; }
-          .overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 1000; }
+          .security-overlay { 
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            right: 0; 
+            bottom: 0; 
+            z-index: 1000; 
+            background: transparent;
+            pointer-events: none;
+          }
         </style>
       </head>
       <body>
         <iframe
-          src="https://www.youtube.com/embed/${youtubeVideoId}?autoplay=1&controls=0&rel=0&modestbranding=1&playsinline=1"
+          src="https://www.youtube.com/embed/${youtubeVideoId}?autoplay=1&controls=1&rel=0&modestbranding=1&playsinline=1"
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           allowfullscreen>
         </iframe>
-        <div class="overlay"></div>
+        <div class="security-overlay"></div>
       </body>
       </html>
     `;
@@ -296,7 +293,8 @@ export default function ViewTab() {
           onError={() => currentVideo && handleVideoError(currentVideo.video_id)}
         />
 
-        <View style={styles.controlOverlay}>
+        {/* Simple progress overlay - no custom controls */}
+        <View style={styles.progressOverlay}>
           <View style={styles.progressContainer}>
             <View style={styles.progressBar}>
               <View 
@@ -313,33 +311,11 @@ export default function ViewTab() {
               {formatTime(watchTimer)} / {formatTime(targetTimer)}
             </Text>
           </View>
-
-          <View style={styles.controlButtons}>
-            <TouchableOpacity style={styles.controlButton} onPress={togglePlayPause}>
-              {isPlaying ? <Pause size={24} color="white" /> : <Play size={24} color="white" />}
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.controlButton} onPress={toggleMute}>
-              {isMuted ? <VolumeX size={24} color="white" /> : <Volume2 size={24} color="white" />}
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.controlButton} onPress={handleManualSkip}>
-              <SkipForward size={24} color="white" />
-            </TouchableOpacity>
-          </View>
         </View>
 
         {isTransitioning && (
           <View style={styles.loadingOverlay}>
-            <Text style={styles.transitionText}>
-              {coinsEarned ? 'Coins earned! Loading next video...' : 'Loading next video...'}
-            </Text>
-          </View>
-        )}
-
-        {coinsEarned && (
-          <View style={styles.coinEarnedOverlay}>
-            <Text style={styles.coinEarnedText}>🪙 +{currentVideo.coin_reward} Coins Earned!</Text>
+            <Text style={styles.transitionText}>Loading next video...</Text>
           </View>
         )}
       </View>
@@ -441,7 +417,7 @@ const styles = StyleSheet.create({
   webView: {
     flex: 1,
   },
-  controlOverlay: {
+  progressOverlay: {
     position: 'absolute',
     bottom: 0,
     left: 0,
@@ -452,7 +428,6 @@ const styles = StyleSheet.create({
   progressContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
   },
   progressBar: {
     flex: 1,
@@ -471,16 +446,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     minWidth: 80,
   },
-  controlButtons: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 20,
-  },
-  controlButton: {
-    padding: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: 20,
-  },
   loadingOverlay: {
     position: 'absolute',
     top: 0,
@@ -495,21 +460,6 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: '600',
-  },
-  coinEarnedOverlay: {
-    position: 'absolute',
-    top: 20,
-    left: 20,
-    right: 20,
-    backgroundColor: 'rgba(255, 215, 0, 0.9)',
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  coinEarnedText: {
-    color: '#333',
-    fontSize: 16,
-    fontWeight: 'bold',
   },
   controlsContainer: {
     flex: 1,
