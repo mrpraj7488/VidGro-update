@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Alert, AppState } from 'react
 import { WebView } from 'react-native-webview';
 import { useAuth } from '../../contexts/AuthContext';
 import { useVideoStore } from '../../store/videoStore';
-import { updateUserCoins } from '../../lib/supabase';
+import { processVideoCompletion } from '../../lib/supabase';
 import GlobalHeader from '../../components/GlobalHeader';
 import { ExternalLink } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -118,19 +118,21 @@ export default function ViewTab() {
     });
 
     try {
-      // Award coins using the optimized function
-      const result = await updateUserCoins(
+      // Award coins using the unified video completion function
+      const result = await processVideoCompletion(
         user.id,
-        currentVideo.coin_reward,
-        'video_watch',
-        `Watched video: ${currentVideo.title}`,
-        currentVideo.video_id
+        currentVideo.video_id,
+        currentVideo.duration_seconds
       );
 
       console.log('Coin award result:', result);
       
       if (result?.success) {
-        console.log('✅ Coins awarded successfully:', currentVideo.coin_reward);
+        if (result.duplicate) {
+          console.log('✅ Video already completed:', result.message);
+        } else {
+          console.log('✅ Coins awarded successfully:', result.coins_earned);
+        }
         setCoinsEarned(true);
         
         // Refresh profile silently
@@ -357,7 +359,7 @@ export default function ViewTab() {
           </View>
           <View style={styles.statItem}>
             <Text style={[styles.statNumber, coinsEarned && styles.statNumberEarned]}>
-              {currentVideo.coin_reward}
+              {rewardProcessed && coinsEarned ? '✓' : currentVideo.coin_reward}
             </Text>
             <Text style={styles.statLabel}>
               {rewardProcessed && coinsEarned ? 'Coins Added' : 'Coins to earn'}

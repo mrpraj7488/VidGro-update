@@ -99,32 +99,13 @@ export async function updateUserCoins(
     referenceId
   });
   
-  // CRITICAL: Check for existing transaction to prevent duplicates
-  if (referenceId && transactionType === 'video_watch') {
-    const { data: existingTransaction, error: checkError } = await supabase
-      .from('coin_transactions')
-      .select('id')
-      .eq('user_id', userId)
-      .eq('reference_id', referenceId)
-      .eq('transaction_type', 'video_watch')
-      .limit(1);
-    
-    if (checkError) {
-      console.error('Error checking for duplicate transaction:', checkError);
-      return { success: false, error: checkError.message };
-    }
-    
-    if (existingTransaction && existingTransaction.length > 0) {
-      console.log('✅ Coins already awarded for video:', referenceId);
-      // Return success since coins were already awarded (not an error condition)
-      return { 
-        success: true, 
-        message: 'Coins already awarded for this video',
-        duplicate: true 
-      };
-    }
+  // For video_watch transactions, use the unified completion function
+  if (transactionType === 'video_watch' && referenceId) {
+    console.log('🎯 Using unified video completion for video_watch transaction');
+    return await processVideoCompletion(userId, referenceId, amount);
   }
   
+  // For other transaction types, use the atomic balance update
   const { data, error } = await supabase.rpc('update_user_balance_atomic', {
     user_uuid: userId,
     coin_amount: amount,
@@ -140,6 +121,46 @@ export async function updateUserCoins(
 
   console.log('💰 updateUserCoins result:', data);
   return data;
+}
+
+// NEW: Unified video completion function
+export async function processVideoCompletion(
+  userId: string,
+  videoId: string,
+  watchDuration: number
+) {
+  try {
+    console.log('🎯 processVideoCompletion called:', { userId, videoId, watchDuration });
+    
+    const { data, error } = await supabase
+      .rpc('process_video_completion', {
+        user_uuid: userId,
+        video_uuid: videoId,
+        watch_duration: watchDuration
+      });
+      
+    if (error) {
+      console.error('❌ Database error in processVideoCompletion:', error);
+      throw error;
+    }
+    
+    console.log('🎯 Video completion result:', data);
+    
+    if (data.success) {
+      if (data.duplicate) {
+        console.log('✅ Video already completed:', data.message);
+      } else {
+        console.log('✅ Coins awarded:', data.coins_earned);
+      }
+      return data;
+    } else {
+      console.error('❌ Coin award failed:', data.error);
+      return data;
+    }
+  } catch (error) {
+    console.error('❌ Coin award error:', error);
+    return { success: false, error: error.message };
+  }
 }
 
 // Helper function to get user balance quickly
