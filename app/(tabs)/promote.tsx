@@ -142,7 +142,7 @@ export default function PromoteTab() {
         
         Alert.alert(
           'Video Promoted Successfully!',
-          `Your video "${videoTitle}" has been submitted for promotion. It will be active in the queue after a 10-minute hold period.${discountText}`,
+          `Your video "${videoTitle}" has been submitted for promotion and is now active in the queue.${discountText}`,
           [
             { text: 'OK', onPress: () => {
               setYoutubeUrl('');

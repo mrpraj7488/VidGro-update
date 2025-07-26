@@ -105,7 +105,7 @@ export default function ViewTab() {
     });
 
     try {
-      // Simple coin award using only processVideoCompletion
+      // Process video completion with new user_balances system
       const result = await processVideoCompletion(
         user.id,
         currentVideo.video_id,
@@ -135,7 +135,15 @@ export default function ViewTab() {
         console.error('❌ Coin award failed:', result?.error);
         // Reset flag if failed so user can retry
         rewardProcessedRef.current = false;
-        Alert.alert('Error', 'Failed to award coins. Please try again.');
+        
+        // Show more specific error messages
+        if (result?.error?.includes('already completed')) {
+          Alert.alert('Already Completed', 'You have already completed this video.');
+        } else if (result?.error?.includes('insufficient watch time')) {
+          Alert.alert('Watch Complete', 'Please watch the full video to earn coins.');
+        } else {
+          Alert.alert('Error', 'Failed to award coins. Please try again.');
+        }
       }
     } catch (error) {
       console.error('Error during timer completion:', error);

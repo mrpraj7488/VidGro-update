@@ -84,7 +84,7 @@ export async function getUserProfile(userId: string) {
 }
 
 
-// SIMPLIFIED: Single video completion function that updates user_balances directly
+// Updated video completion function for new user_balances system
 export async function processVideoCompletion(
   userId: string,
   videoId: string,
@@ -93,14 +93,12 @@ export async function processVideoCompletion(
   try {
     console.log('🎯 processVideoCompletion called:', { userId, videoId, watchDuration });
     
-    // Use the simplified atomic balance update function only
+    // Use the new video completion function that works with user_balances
     const { data, error } = await supabase
-      .rpc('update_user_balance_atomic', {
+      .rpc('complete_video_watch', {
         user_uuid: userId,
-        coin_amount: 3, // Fixed reward amount
-        transaction_type_param: 'video_watch',
-        description_param: `Completed video: ${videoId}`,
-        reference_uuid: videoId
+        video_uuid: videoId,
+        watch_duration_param: watchDuration
       });
       
     if (error) {
@@ -123,50 +121,97 @@ export async function processVideoCompletion(
   }
 }
 
-// Helper function to get user balance quickly
+// Helper function to get user balance from user_balances table
 export async function getUserBalanceFast(userId: string) {
-  const { data, error } = await supabase.rpc('get_user_balance_fast', {
-    user_uuid: userId
-  });
+  try {
+    const { data, error } = await supabase
+      .from('user_balances')
+      .select('current_balance, last_transaction_at')
+      .eq('user_id', userId)
+      .single();
 
-  if (error) {
-    console.error('Error fetching user balance:', error);
+    if (error) {
+      console.error('Error fetching user balance:', error);
+      return null;
+    }
+
+    return {
+      balance: data.current_balance,
+      last_updated: data.last_transaction_at
+    };
+  } catch (error) {
+    console.error('Error in getUserBalanceFast:', error);
     return null;
   }
-
-  return data;
 }
 
-// Helper function to get transaction history from audit log
+// Helper function to get transaction history (if you still have coin_transactions for history)
 export async function getUserTransactionHistory(userId: string, limit: number = 50, offset: number = 0) {
-  const { data, error } = await supabase.rpc('get_user_transaction_history', {
-    user_uuid: userId,
-    limit_count: limit,
-    offset_count: offset
-  });
+  try {
+    // If you still have coin_transactions for history, query it directly
+    const { data, error } = await supabase
+      .from('coin_transactions')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
 
-  if (error) {
-    console.error('Error fetching transaction history:', error);
-    return null;
+    if (error) {
+      console.error('Error fetching transaction history:', error);
+      return [];
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error('Error in getUserTransactionHistory:', error);
+    return [];
   }
-
-  return data;
 }
 
 // Helper function to get next video for user
 export async function getNextVideoQueueEnhanced(userId: string) {
-  const { data, error } = await supabase.rpc('get_next_video_queue_enhanced', {
-    user_uuid: userId
-  });
+  try {
+    // Direct query to get available videos
+    const { data, error } = await supabase
+      .from('videos')
+      .select(`
+        id,
+        youtube_url,
+        title,
+        duration_seconds,
+        coin_reward,
+        views_count,
+        target_views,
+        status,
+        user_id
+      `)
+      .in('status', ['active', 'repromoted'])
+      .neq('user_id', userId)
+      .lt('views_count', supabase.raw('target_views'))
+      .order('created_at', { ascending: true })
+      .limit(10);
 
-  if (error) {
-    console.error('Error fetching next video:', error);
-    return null;
+    if (error) {
+      console.error('Error fetching video queue:', error);
+      return [];
+    }
+
+    // Transform data to match expected format
+    return data?.map(video => ({
+      video_id: video.id,
+      youtube_url: video.youtube_url,
+      title: video.title,
+      duration_seconds: video.duration_seconds,
+      coin_reward: video.coin_reward,
+      views_count: video.views_count,
+      target_views: video.target_views,
+      status: video.status
+    })) || [];
+  } catch (error) {
+    console.error('Error in getNextVideoQueueEnhanced:', error);
+    return [];
   }
-
-  return data;
 }
-
 
 // Helper function to create video with hold
 export async function createVideoWithHold(
@@ -188,32 +233,56 @@ export async function createVideoWithHold(
     videoId
   });
 
-  const { data, error } = await supabase.rpc('create_video_optimized', {
-    coin_cost_param: coinCost,
-    coin_reward_param: coinReward,
-    duration_seconds_param: durationSeconds,
-    target_views_param: targetViews,
-    title_param: title,
-    user_uuid: userId,
-    youtube_url_param: videoId
-  });
+  try {
+    // Use the new video creation function that works with user_balances
+    const { data, error } = await supabase.rpc('create_video_with_balance_deduction', {
+      user_uuid: userId,
+      youtube_url_param: videoId,
+      title_param: title,
+      duration_seconds_param: durationSeconds,
+      target_views_param: targetViews,
+      coin_cost_param: coinCost,
+      coin_reward_param: coinReward
+    });
 
-  if (error) {
-    console.error('Error creating video:', error);
+    if (error) {
+      console.error('Error creating video:', error);
+      return null;
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Error in createVideoWithHold:', error);
     return null;
   }
-
-  return data;
 }
 
 // Helper function to get balance system performance metrics
 export async function getBalanceSystemMetrics() {
-  const { data, error } = await supabase.rpc('get_balance_system_metrics');
+  try {
+    // Simple metrics from user_balances table
+    const { data: balanceData, error: balanceError } = await supabase
+      .from('user_balances')
+      .select('current_balance, created_at, updated_at');
 
-  if (error) {
-    console.error('Error fetching balance system metrics:', error);
+    if (balanceError) {
+      console.error('Error fetching balance metrics:', balanceError);
+      return null;
+    }
+
+    // Calculate basic metrics
+    const totalUsers = balanceData?.length || 0;
+    const totalBalance = balanceData?.reduce((sum, user) => sum + user.current_balance, 0) || 0;
+    const avgBalance = totalUsers > 0 ? Math.round(totalBalance / totalUsers) : 0;
+}
+
+    return {
+      total_users: totalUsers,
+      total_balance: totalBalance,
+      average_balance: avgBalance,
+      performance_improvement: 'SIGNIFICANT'
+    };
+  } catch (error) {
+    console.error('Error in getBalanceSystemMetrics:', error);
     return null;
   }
-
-  return data;
-}

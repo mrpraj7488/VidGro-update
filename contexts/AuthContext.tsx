@@ -70,19 +70,58 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loadProfile = async (userId: string) => {
     try {
       console.log('Loading profile for user:', userId);
-      const profileData = await getUserProfile(userId);
+      
+      // Get profile data
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+        
+      if (profileError) {
+        console.error('Error loading profile:', profileError);
+        return;
+      }
+      
+      // Get current balance from user_balances table
+      const { data: balanceData, error: balanceError } = await supabase
+        .from('user_balances')
+        .select('current_balance')
+        .eq('user_id', userId)
+        .single();
+        
       if (profileData) {
         console.log('Profile loaded successfully:', profileData.username);
-        setProfile(profileData);
+        
+        // Merge profile with current balance
+        setProfile({
+          ...profileData,
+          coins: balanceData?.current_balance || 0
+        });
       } else {
         console.warn('No profile data returned for user:', userId);
         // Wait a moment and try again in case profile is still being created
         setTimeout(async () => {
           console.log('Retrying profile load...');
-          const retryProfileData = await getUserProfile(userId);
+          
+          const { data: retryProfileData, error: retryProfileError } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', userId)
+            .single();
+            
+          const { data: retryBalanceData } = await supabase
+            .from('user_balances')
+            .select('current_balance')
+            .eq('user_id', userId)
+            .single();
+            
           if (retryProfileData) {
             console.log('Profile loaded on retry:', retryProfileData.username);
-            setProfile(retryProfileData);
+            setProfile({
+              ...retryProfileData,
+              coins: retryBalanceData?.current_balance || 0
+            });
           } else {
             console.error('Profile still not found after retry');
             // Create a minimal profile object to prevent app crashes
@@ -106,9 +145,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Wait and retry on error too
       setTimeout(async () => {
         try {
-          const retryProfileData = await getUserProfile(userId);
+          const { data: retryProfileData } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', userId)
+            .single();
+            
+          const { data: retryBalanceData } = await supabase
+            .from('user_balances')
+            .select('current_balance')
+            .eq('user_id', userId)
+            .single();
+            
           if (retryProfileData) {
-            setProfile(retryProfileData);
+            setProfile({
+              ...retryProfileData,
+              coins: retryBalanceData?.current_balance || 0
+            });
           } else {
             // Set a fallback profile to prevent crashes
             setProfile({

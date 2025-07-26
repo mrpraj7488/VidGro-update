@@ -430,52 +430,25 @@ export default function EditVideoScreen() {
     try {
       const coinCost = calculateCoinCost(selectedViews, selectedDuration);
       
-      // Deduct coins for repromotion using optimized system
-      const { data: balanceResult, error: coinError } = await supabase
-        .rpc('update_user_balance_atomic', {
+      // Repromote video using new system
+      const { data: repromoteResult, error: repromoteError } = await supabase
+        .rpc('repromote_video_with_balance', {
           user_uuid: user.id,
-          coin_amount: -coinCost,
-          transaction_type_param: 'video_promotion',
-          description_param: `Repromoted video: ${videoData.title}`,
-          reference_uuid: videoData.id
+          video_uuid: videoData.id,
+          new_target_views: selectedViews,
+          new_duration: selectedDuration,
+          coin_cost_param: coinCost
         });
 
-      if (coinError) {
-        throw new Error(coinError.message);
+      if (repromoteError) {
+        throw new Error(repromoteError.message);
       }
 
-      if (!balanceResult?.success) {
-        Alert.alert('Insufficient Coins', balanceResult?.error || `You need 🪙${coinCost} coins to repromote this video.`);
+      if (!repromoteResult?.success) {
+        Alert.alert('Insufficient Coins', repromoteResult?.error || `You need 🪙${coinCost} coins to repromote this video.`);
         setRepromoting(false);
         return;
       }
-
-      // Clear existing views for this video
-      const { error: clearViewsError } = await supabase
-        .from('video_views')
-        .delete()
-        .eq('video_id', videoData.id);
-
-      if (clearViewsError) throw clearViewsError;
-
-      // Update video with new promotion settings - set to repromoted status
-      const { error: updateError } = await supabase
-        .from('videos')
-        .update({
-          views_count: 0,
-          target_views: selectedViews,
-          duration_seconds: selectedDuration,
-          coin_cost: coinCost,
-          coin_reward: 3, // Fixed reward per view
-          status: 'repromoted', // Set to repromoted status
-          updated_at: new Date().toISOString(),
-          hold_until: null, // Clear any hold period
-          repromoted_at: new Date().toISOString()
-        })
-        .eq('id', videoData.id)
-        .eq('user_id', user.id);
-
-      if (updateError) throw updateError;
 
       // Refresh profile and clear queue
       await refreshProfile();
@@ -483,7 +456,7 @@ export default function EditVideoScreen() {
 
       Alert.alert(
         'Success',
-        `Video repromoted successfully! It's now active in the queue with ${selectedViews} target views. New balance: 🪙${balanceResult.new_balance}`,
+        `Video repromoted successfully! It's now active in the queue with ${selectedViews} target views. New balance: 🪙${repromoteResult.new_balance}`,
         [{ text: 'OK', onPress: handleNavigateBack }]
       );
     } catch (error) {

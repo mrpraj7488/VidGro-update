@@ -97,41 +97,31 @@ export default function Analytics() {
       }
 
       // Fetch recent activity (excluding video_watch rewards)
-      const { data: activityData, error: activityError } = await supabase
-        .from('coin_transactions')
-        .select('id, amount, transaction_type, description, created_at')
-        .eq('user_id', user.id)
-        .in('transaction_type', [
-          'video_promotion', 
-          'purchase', 
-          'referral_bonus', 
-          'admin_adjustment', 
-          'vip_purchase', 
-          'ad_stop_purchase',
-          'video_deletion_refund'
-        ])
-        .order('created_at', { ascending: false })
-        .limit(10);
+      // Get transaction history if coin_transactions table still exists for history
+      const activityData = await getUserTransactionHistory(user.id, 10);
 
-      if (activityError) {
-        console.error('Activity error:', activityError);
-      } else if (activityData) {
+      if (activityData && activityData.length > 0) {
         setRecentActivity(activityData);
+      } else {
+        // If no transaction history, create some sample data from user_balances
+        const { data: balanceData } = await supabase
+          .from('user_balances')
+          .select('current_balance, last_transaction_at, created_at')
+          .eq('user_id', user.id)
+          .single();
+          
+        if (balanceData) {
+          setRecentActivity([
+            {
+              id: 'balance-update',
+              amount: balanceData.current_balance,
+              transaction_type: 'balance_update',
+              description: 'Current balance',
+              created_at: balanceData.last_transaction_at || balanceData.created_at
+            }
+          ]);
+        }
       }
-
-      // Alternative: Use the RPC function if it exists
-      /* const { data: activityData, error: activityError } = await supabase
-        .rpc('get_user_transaction_history', { 
-          user_uuid: user.id, 
-          limit_count: 10,
-          offset_count: 0
-        });
-
-      if (activityError) {
-        console.error('Activity error:', activityError);
-      } else if (activityData) {
-        setRecentActivity(activityData);
-      } */
 
       // Fetch user's videos with analytics
       const { data: videosData, error: videosError } = await supabase
