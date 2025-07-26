@@ -108,6 +108,7 @@ export default function ViewTab() {
     // Set processing flags immediately
     rewardProcessingRef.current = true;
     setIsProcessingReward(true);
+    setRewardProcessed(true);
 
     console.log('🎯 Processing reward for video:', {
       videoId: currentVideo.video_id,
@@ -130,7 +131,6 @@ export default function ViewTab() {
       
       if (result?.success) {
         console.log('✅ Coins awarded successfully:', currentVideo.coin_reward);
-        setRewardProcessed(true);
         setCoinsEarned(true);
         
         // Refresh profile silently
@@ -147,39 +147,25 @@ export default function ViewTab() {
             }
           }, 1500);
         }
-      } else if (result?.error === 'Coins already awarded for this video') {
-        // Handle duplicate award gracefully - coins were already awarded successfully
-        console.log('✅ Coins already awarded for this video - no error needed');
-        setRewardProcessed(true);
-        setCoinsEarned(true);
-        
-        // Auto-advance to next video after brief delay
-        if (autoPlayEnabled) {
-          setTimeout(() => {
-            moveToNextVideo();
-            
-            // Fetch more videos if queue is low
-            if (videoQueue.length <= 2 && user) {
-              fetchVideos(user.id);
-            }
-          }, 1500);
-        }
       } else {
         console.error('❌ Failed to award coins:', result?.error);
+        // Reset processing flags if failed so user can retry
+        setRewardProcessed(false);
+        rewardProcessingRef.current = false;
         Alert.alert('Error', 'Failed to award coins. Please try again.');
       }
     } catch (error) {
       console.error('Error during timer completion:', error);
+      // Reset processing flags if error occurred
+      setRewardProcessed(false);
+      rewardProcessingRef.current = false;
       if (currentVideo) {
         handleVideoError(currentVideo.video_id);
       }
       Alert.alert('Error', 'Something went wrong. Please try again.');
     } finally {
       setIsProcessingReward(false);
-      // Only reset processing ref if we haven't successfully processed the reward
-      if (!rewardProcessed) {
-        rewardProcessingRef.current = false;
-      }
+      rewardProcessingRef.current = false;
     }
   };
 
