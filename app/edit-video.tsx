@@ -430,22 +430,20 @@ export default function EditVideoScreen() {
     try {
       const coinCost = calculateCoinCost(selectedViews, selectedDuration);
       
-      // Repromote video using new system
-      const { data: repromoteResult, error: repromoteError } = await supabase
-        .rpc('repromote_video_with_balance', {
-          user_uuid: user.id,
-          video_uuid: videoData.id,
-          new_target_views: selectedViews,
-          new_duration: selectedDuration,
-          coin_cost_param: coinCost
-        });
+      // Import the repromote function
+      const { repromoteVideoWithBalance } = await import('@/lib/supabase');
+      
+      // Repromote video using coin_transactions system
+      const repromoteResult = await repromoteVideoWithBalance(
+        user.id,
+        videoData.id,
+        selectedViews,
+        selectedDuration,
+        coinCost
+      );
 
-      if (repromoteError) {
-        throw new Error(repromoteError.message);
-      }
-
-      if (!repromoteResult?.success) {
-        Alert.alert('Insufficient Coins', repromoteResult?.error || `You need 🪙${coinCost} coins to repromote this video.`);
+      if (!repromoteResult.success) {
+        Alert.alert('Repromote Failed', repromoteResult.error || `You need 🪙${coinCost} coins to repromote this video.`);
         setRepromoting(false);
         return;
       }

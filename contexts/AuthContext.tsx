@@ -83,20 +83,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       
-      // Get current balance from user_balances table
-      const { data: balanceData, error: balanceError } = await supabase
-        .from('user_balances')
-        .select('current_balance')
-        .eq('user_id', userId)
-        .single();
+      // Get current balance from coin_transactions table
+      const { data: transactionData, error: transactionError } = await supabase
+        .from('coin_transactions')
+        .select('amount')
+        .eq('user_id', userId);
+        
+      const currentBalance = transactionData?.reduce((sum, t) => sum + t.amount, 0) || 0;
         
       if (profileData) {
         console.log('Profile loaded successfully:', profileData.username);
         
-        // Merge profile with current balance
+        // Merge profile with calculated balance
         setProfile({
           ...profileData,
-          coins: balanceData?.current_balance || 0
+          coins: currentBalance
         });
       } else {
         console.warn('No profile data returned for user:', userId);
@@ -110,17 +111,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             .eq('id', userId)
             .single();
             
-          const { data: retryBalanceData } = await supabase
-            .from('user_balances')
-            .select('current_balance')
-            .eq('user_id', userId)
-            .single();
+          const { data: retryTransactionData } = await supabase
+            .from('coin_transactions')
+            .select('amount')
+            .eq('user_id', userId);
+            
+          const retryBalance = retryTransactionData?.reduce((sum, t) => sum + t.amount, 0) || 0;
             
           if (retryProfileData) {
             console.log('Profile loaded on retry:', retryProfileData.username);
             setProfile({
               ...retryProfileData,
-              coins: retryBalanceData?.current_balance || 0
+              coins: retryBalance
             });
           } else {
             console.error('Profile still not found after retry');
@@ -151,16 +153,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             .eq('id', userId)
             .single();
             
-          const { data: retryBalanceData } = await supabase
-            .from('user_balances')
-            .select('current_balance')
-            .eq('user_id', userId)
-            .single();
+          const { data: retryTransactionData } = await supabase
+            .from('coin_transactions')
+            .select('amount')
+            .eq('user_id', userId);
+            
+          const retryBalance = retryTransactionData?.reduce((sum, t) => sum + t.amount, 0) || 0;
             
           if (retryProfileData) {
             setProfile({
               ...retryProfileData,
-              coins: retryBalanceData?.current_balance || 0
+              coins: retryBalance
             });
           } else {
             // Set a fallback profile to prevent crashes

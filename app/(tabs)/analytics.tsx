@@ -97,30 +97,10 @@ export default function Analytics() {
       }
 
       // Fetch recent activity (excluding video_watch rewards)
-      // Get transaction history if coin_transactions table still exists for history
       const activityData = await getUserTransactionHistory(user.id, 10);
 
       if (activityData && activityData.length > 0) {
         setRecentActivity(activityData);
-      } else {
-        // If no transaction history, create some sample data from user_balances
-        const { data: balanceData } = await supabase
-          .from('user_balances')
-          .select('current_balance, last_transaction_at, created_at')
-          .eq('user_id', user.id)
-          .single();
-          
-        if (balanceData) {
-          setRecentActivity([
-            {
-              id: 'balance-update',
-              amount: balanceData.current_balance,
-              transaction_type: 'balance_update',
-              description: 'Current balance',
-              created_at: balanceData.last_transaction_at || balanceData.created_at
-            }
-          ]);
-        }
       }
 
       // Fetch user's videos with analytics

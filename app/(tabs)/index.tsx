@@ -105,7 +105,7 @@ export default function ViewTab() {
     });
 
     try {
-      // Process video completion with new user_balances system
+      // Process video completion with coin_transactions system
       const result = await processVideoCompletion(
         user.id,
         currentVideo.video_id,
@@ -114,7 +114,7 @@ export default function ViewTab() {
 
       console.log('Coin award result:', result);
       
-      if (result?.success) {
+      if (result.success) {
         console.log('✅ Coins awarded successfully');
         
         // Refresh profile silently
@@ -132,14 +132,14 @@ export default function ViewTab() {
           }, 1500);
         }
       } else {
-        console.error('❌ Coin award failed:', result?.error);
+        console.error('❌ Coin award failed:', result.error);
         // Reset flag if failed so user can retry
         rewardProcessedRef.current = false;
         
         // Show more specific error messages
-        if (result?.error?.includes('already completed')) {
+        if (result.error?.includes('already completed')) {
           Alert.alert('Already Completed', 'You have already completed this video.');
-        } else if (result?.error?.includes('insufficient watch time')) {
+        } else if (result.error?.includes('Insufficient watch time')) {
           Alert.alert('Watch Complete', 'Please watch the full video to earn coins.');
         } else {
           Alert.alert('Error', 'Failed to award coins. Please try again.');
