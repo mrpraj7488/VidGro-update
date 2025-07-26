@@ -115,13 +115,8 @@ export async function updateUserCoins(
     }
     
     if (existingTransaction && existingTransaction.length > 0) {
-      console.log('✅ Coins already awarded for video:', referenceId);
-      // Return success since coins were already awarded (not an error condition)
-      return { 
-        success: true, 
-        message: 'Coins already awarded for this video',
-        duplicate: true 
-      };
+      console.log('⚠️ Duplicate transaction prevented for video:', referenceId);
+      return { success: false, error: 'Coins already awarded for this video' };
     }
   }
   
