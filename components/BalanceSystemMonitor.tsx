@@ -36,7 +36,7 @@ export default function BalanceSystemMonitor() {
       }
     } catch (error) {
       console.error('Error fetching balance metrics:', error);
-      Alert.alert('Error', 'Failed to load balance system metrics');
+      Alert.alert('Error', 'Failed to load system metrics');
     } finally {
       setLoading(false);
     }

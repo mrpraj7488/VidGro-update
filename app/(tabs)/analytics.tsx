@@ -10,7 +10,7 @@ import {
   Alert,
 } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
-import { supabase } from '../../lib/supabase';
+import { supabase, getUserAnalyticsSummary, getUserTransactionHistory } from '../../lib/supabase';
 import { useRouter } from 'expo-router';
 import GlobalHeader from '../../components/GlobalHeader';
 import { ChartBar as BarChart3, Eye, Coins, Play, Pause, CircleCheck as CheckCircle, Timer, CreditCard as Edit3, Activity, TrendingUp, ChevronDown, ChevronUp } from 'lucide-react-native';
@@ -82,46 +82,21 @@ export default function Analytics() {
     try {
       setLoading(true);
 
-      // Fetch user analytics summary using the fixed function
-      const { data: analyticsData, error: analyticsError } = await supabase
-        .rpc('get_user_analytics_summary_fixed', { user_uuid: user.id });
+      // Fetch user analytics summary
+      const analyticsData = await getUserAnalyticsSummary(user.id);
 
-      if (analyticsError) {
-        console.error('Analytics error:', analyticsError);
+      if (!analyticsData) {
+        console.error('Failed to load analytics data');
         Alert.alert('Error', 'Failed to load analytics data');
         return;
       }
 
-      if (analyticsData && analyticsData.length > 0) {
-        setAnalytics(analyticsData[0]);
-      }
+      setAnalytics(analyticsData);
 
-      // Fetch recent activity (excluding video_watch rewards)
-      // Get transaction history if coin_transactions table still exists for history
+      // Fetch recent activity from coin_transactions
       const activityData = await getUserTransactionHistory(user.id, 10);
 
-      if (activityData && activityData.length > 0) {
-        setRecentActivity(activityData);
-      } else {
-        // If no transaction history, create some sample data from user_balances
-        const { data: balanceData } = await supabase
-          .from('user_balances')
-          .select('current_balance, last_transaction_at, created_at')
-          .eq('user_id', user.id)
-          .single();
-          
-        if (balanceData) {
-          setRecentActivity([
-            {
-              id: 'balance-update',
-              amount: balanceData.current_balance,
-              transaction_type: 'balance_update',
-              description: 'Current balance',
-              created_at: balanceData.last_transaction_at || balanceData.created_at
-            }
-          ]);
-        }
-      }
+      setRecentActivity(activityData);
 
       // Fetch user's videos with analytics
       const { data: videosData, error: videosError } = await supabase

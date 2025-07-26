@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
 import { useRouter } from 'expo-router';
-import { createVideoWithHold } from '../../lib/supabase';
+import { createVideoWithBalanceDeduction } from '../../lib/supabase';
 import { validateYouTubeUrl, validateVideoTitle, extractYouTubeVideoId } from '../../utils/validation';
 import VideoPreview from '../../components/VideoPreview';
 import GlobalHeader from '../../components/GlobalHeader';
@@ -125,17 +125,17 @@ export default function PromoteTab() {
       // Use the fixed reward calculation logic
       const coinReward = calculateCoinsByDuration(videoDuration);
       
-      const result = await createVideoWithHold(
-        cost,
-        coinReward,
+      const result = await createVideoWithBalanceDeduction(
+        user.id,
+        extractedVideoId,
+        videoTitle,
         videoDuration,
         targetViews,
-        videoTitle,
-        user.id,
-        extractedVideoId
+        cost,
+        coinReward
       );
 
-      if (result) {
+      if (result?.success) {
         await refreshProfile();
         const vipDiscount = getVipDiscount();
         const discountText = vipDiscount > 0 ? `\n\n👑 VIP Discount Applied: ${vipDiscount} coins saved!` : '';
@@ -153,7 +153,7 @@ export default function PromoteTab() {
           ]
         );
       } else {
-        Alert.alert('Error', 'Failed to promote video. Please try again.');
+        Alert.alert('Error', result?.error || 'Failed to promote video. Please try again.');
       }
     } catch (error) {
       console.error('Error promoting video:', error);

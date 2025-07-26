@@ -17,7 +17,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useVideoStore } from '@/store/videoStore';
-import { supabase } from '@/lib/supabase';
+import { supabase, deleteVideoWithRefund, repromoteVideoWithBalance } from '@/lib/supabase';
 import { ArrowLeft, Eye, Clock, Trash2, Play, Timer, ChevronDown, Check, MoveVertical as MoreVertical, CreditCard as Edit3 } from 'lucide-react-native';
 import Animated, {
   useSharedValue,
@@ -351,19 +351,11 @@ export default function EditVideoScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              // Use the new delete function with proper refund handling
-              const { data: deleteResult, error: deleteError } = await supabase
-                .rpc('delete_video_optimized', {
-                  video_uuid: videoData.id,
-                  user_uuid: user.id
-                });
+              // Use the delete function with refund handling
+              const deleteResult = await deleteVideoWithRefund(user.id, videoData.id);
 
-              if (deleteError) {
-                throw new Error(deleteError.message);
-              }
-
-              if (!deleteResult?.success) {
-                throw new Error(deleteResult?.error || 'Failed to delete video');
+              if (!deleteResult.success) {
+                throw new Error(deleteResult.error || 'Failed to delete video');
               }
 
               // Refresh profile and clear queue
@@ -378,7 +370,7 @@ export default function EditVideoScreen() {
 
               Alert.alert(
                 'Success', 
-                deleteResult.message || `Video deleted and 🪙${deleteResult.refund_amount} coins refunded! New balance: 🪙${deleteResult.new_balance}`, 
+                deleteResult.message || `Video deleted and 🪙${deleteResult.refund_amount} coins refunded!`, 
                 [
                 { text: 'OK', onPress: () => router.back() }
               ]);
@@ -430,22 +422,17 @@ export default function EditVideoScreen() {
     try {
       const coinCost = calculateCoinCost(selectedViews, selectedDuration);
       
-      // Repromote video using new system
-      const { data: repromoteResult, error: repromoteError } = await supabase
-        .rpc('repromote_video_with_balance', {
-          user_uuid: user.id,
-          video_uuid: videoData.id,
-          new_target_views: selectedViews,
-          new_duration: selectedDuration,
-          coin_cost_param: coinCost
-        });
+      // Repromote video using coin_transactions system
+      const repromoteResult = await repromoteVideoWithBalance(
+        user.id,
+        videoData.id,
+        selectedViews,
+        selectedDuration,
+        coinCost
+      );
 
-      if (repromoteError) {
-        throw new Error(repromoteError.message);
-      }
-
-      if (!repromoteResult?.success) {
-        Alert.alert('Insufficient Coins', repromoteResult?.error || `You need 🪙${coinCost} coins to repromote this video.`);
+      if (!repromoteResult.success) {
+        Alert.alert('Error', repromoteResult.error || `Failed to repromote video.`);
         setRepromoting(false);
         return;
       }
@@ -456,7 +443,7 @@ export default function EditVideoScreen() {
 
       Alert.alert(
         'Success',
-        `Video repromoted successfully! It's now active in the queue with ${selectedViews} target views. New balance: 🪙${repromoteResult.new_balance}`,
+        repromoteResult.message || `Video repromoted successfully! It's now active in the queue with ${selectedViews} target views.`,
         [{ text: 'OK', onPress: handleNavigateBack }]
       );
     } catch (error) {
