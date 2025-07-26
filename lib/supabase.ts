@@ -83,47 +83,8 @@ export async function getUserProfile(userId: string) {
   }
 }
 
-// Helper function to update user coins
-export async function updateUserCoins(
-  userId: string,
-  amount: number,
-  transactionType: string,
-  description: string,
-  referenceId?: string
-) {
-  console.log('🎯 updateUserCoins called with:', {
-    userId,
-    amount,
-    transactionType,
-    description,
-    referenceId
-  });
-  
-  // For video_watch transactions, use the unified completion function
-  if (transactionType === 'video_watch' && referenceId) {
-    console.log('🎯 Using unified video completion for video_watch transaction');
-    return await processVideoCompletion(userId, referenceId, amount);
-  }
-  
-  // For other transaction types, use the atomic balance update
-  const { data, error } = await supabase.rpc('update_user_balance_atomic', {
-    user_uuid: userId,
-    coin_amount: amount,
-    transaction_type_param: transactionType,
-    description_param: description,
-    reference_uuid: referenceId || null
-  });
 
-  if (error) {
-    console.error('Error updating user coins:', error);
-    return { success: false, error: error.message };
-  }
-
-  console.log('💰 updateUserCoins result:', data);
-  return data;
-}
-
-// NEW: Unified video completion function
+// SIMPLIFIED: Single video completion function that updates user_balances directly
 export async function processVideoCompletion(
   userId: string,
   videoId: string,
@@ -132,33 +93,32 @@ export async function processVideoCompletion(
   try {
     console.log('🎯 processVideoCompletion called:', { userId, videoId, watchDuration });
     
+    // Use the simplified atomic balance update function only
     const { data, error } = await supabase
-      .rpc('process_video_completion', {
+      .rpc('update_user_balance_atomic', {
         user_uuid: userId,
-        video_uuid: videoId,
-        watch_duration: watchDuration
+        coin_amount: 3, // Fixed reward amount
+        transaction_type_param: 'video_watch',
+        description_param: `Completed video: ${videoId}`,
+        reference_uuid: videoId
       });
       
     if (error) {
-      console.error('❌ Database error in processVideoCompletion:', error);
+      console.error('❌ Error in processVideoCompletion:', error);
       throw error;
     }
     
-    console.log('🎯 Video completion result:', data);
+    console.log('🎯 Coin update result:', data);
     
     if (data.success) {
-      if (data.duplicate) {
-        console.log('✅ Video already completed:', data.message);
-      } else {
-        console.log('✅ Coins awarded:', data.coins_earned);
-      }
+      console.log('✅ Coins awarded successfully');
       return data;
     } else {
-      console.error('❌ Coin award failed:', data.error);
+      console.error('❌ Balance update failed:', data.error);
       return data;
     }
   } catch (error) {
-    console.error('❌ Coin award error:', error);
+    console.error('❌ processVideoCompletion error:', error);
     return { success: false, error: error.message };
   }
 }
@@ -207,32 +167,6 @@ export async function getNextVideoQueueEnhanced(userId: string) {
   return data;
 }
 
-// Helper function to award coins for video completion
-export async function awardCoinsSimpleTimer(
-  userId: string,
-  videoId: string,
-  watchDuration: number
-) {
-  console.log('🎯 Calling award_coins_optimized with:', {
-    userId,
-    videoId,
-    watchDuration
-  });
-  
-  const { data, error } = await supabase.rpc('award_coins_optimized', {
-    user_uuid: userId,
-    video_uuid: videoId,
-    watch_duration: watchDuration
-  });
-
-  if (error) {
-    console.error('Error awarding coins:', error);
-    return { success: false, error: error.message };
-  }
-
-  console.log('💰 Coin award response:', data);
-  return data;
-}
 
 // Helper function to create video with hold
 export async function createVideoWithHold(
@@ -282,79 +216,4 @@ export async function getBalanceSystemMetrics() {
   }
 
   return data;
-}
-
-// Helper function to get clean video analytics (without coin rewards)
-export async function getVideoAnalytics(videoId: string, userId: string) {
-  const { data, error } = await supabase.rpc('get_video_analytics_clean', {
-    video_uuid: videoId,
-    user_uuid: userId
-  });
-
-  if (error) {
-    console.error('Error fetching video analytics:', error);
-    return null;
-  }
-
-  return data;
-}
-
-// Helper function to get recent activity
-export async function getRecentActivity(userId: string, limit: number = 10) {
-  const { data, error } = await supabase.rpc('get_user_transaction_history', {
-    user_uuid: userId,
-    limit_count: limit,
-    offset_count: 0
-  });
-
-  if (error) {
-    console.error('Error fetching recent activity:', error);
-    return null;
-  }
-
-  return data;
-}
-
-// Helper function to process video queue maintenance
-export async function processVideoQueueMaintenance() {
-  // Use the new automatic status checking function
-  const { data, error } = await supabase.rpc('check_and_update_expired_holds');
-
-  if (error) {
-    console.error('Error checking expired holds:', error);
-    return false;
-  }
-
-  if (data && data > 0) {
-    console.log(`${data} videos automatically activated from hold status`);
-  }
-
-  return true;
-}
-
-// Helper function to get video with automatic status checking
-export async function getVideoWithStatusCheck(videoId: string, userId: string) {
-  const { data, error } = await supabase.rpc('get_video_with_status_check', {
-    video_uuid: videoId,
-    user_uuid: userId
-  });
-
-  if (error) {
-    console.error('Error fetching video with status check:', error);
-    return null;
-  }
-
-  return data;
-}
-
-// Helper function to check and update expired holds
-export async function checkAndUpdateExpiredHolds() {
-  const { data, error } = await supabase.rpc('check_and_update_expired_holds');
-
-  if (error) {
-    console.error('Error checking expired holds:', error);
-    return 0;
-  }
-
-  return data || 0;
 }

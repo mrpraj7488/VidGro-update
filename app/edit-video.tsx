@@ -195,12 +195,13 @@ export default function EditVideoScreen() {
     if (!params.videoId || !user) return;
 
     try {
-      // Use the new function that automatically checks and updates status
+      // Simple direct query to videos table
       const { data, error } = await supabase
-        .rpc('get_video_with_status_check', {
-          video_uuid: params.videoId,
-          user_uuid: user.id
-        });
+        .from('videos')
+        .select('*')
+        .eq('id', params.videoId)
+        .eq('user_id', user.id)
+        .single();
 
       if (error) {
         console.error('Error fetching video:', error);
@@ -209,8 +210,8 @@ export default function EditVideoScreen() {
         return;
       }
 
-      if (data.error) {
-        Alert.alert('Error', data.error);
+      if (!data) {
+        Alert.alert('Error', 'Video not found');
         router.back();
         return;
       }
@@ -232,11 +233,6 @@ export default function EditVideoScreen() {
         setHoldTimer(Math.max(0, Math.floor(remainingMs / 1000)));
       }
       
-      // Log if status was automatically updated
-      if (data.status_updated) {
-        console.log('✅ Video status automatically updated during fetch');
-      }
-      
       setupRealTimeUpdates(data);
     } catch (error) {
       console.error('Error:', error);
@@ -247,36 +243,47 @@ export default function EditVideoScreen() {
   };
 
   const setupRealTimeUpdates = (video: VideoData) => {
-    // Set up real-time updates with automatic status checking
+    // Set up simple real-time updates
     const interval = setInterval(async () => {
       try {
-        // Use the status-checking function for real-time updates
+        // Simple query for fresh data
         const { data: freshData, error: statusError } = await supabase
-          .rpc('get_video_with_status_check', {
-            video_uuid: video.id,
-            user_uuid: user?.id
-          });
+          .from('videos')
+          .select('*')
+          .eq('id', video.id)
+          .eq('user_id', user?.id)
+          .single();
         
-        if (!statusError && freshData && !freshData.error) {
+        if (!statusError && freshData) {
           setVideoData(prev => prev ? {
             ...prev,
-            views_count: freshData.views_count || prev.views_count,
-            status: freshData.status || prev.status,
+            views_count: freshData.views_count,
+            status: freshData.status,
             hold_until: freshData.hold_until,
             updated_at: freshData.updated_at,
-            completion_rate: freshData.completion_rate || 0
+            completion_rate: freshData.target_views > 0 
+              ? Math.round((freshData.views_count / freshData.target_views) * 100)
+              : 0
           } : null);
           
-          // If status was updated, log it and potentially update hold timer
-          if (freshData.status_updated && freshData.status === 'active') {
-            console.log('✅ Video automatically activated during real-time update');
+          // Check if hold period expired
+          if (freshData.status === 'on_hold' && freshData.hold_until) {
+            const holdUntilTime = new Date(freshData.hold_until);
+            if (holdUntilTime.getTime() <= new Date().getTime()) {
+              // Hold period expired, update status
+              await supabase
+                .from('videos')
+                .update({ status: 'active', hold_until: null })
+                .eq('id', video.id);
+            }
+          } else if (freshData.status === 'active') {
             setHoldTimer(0); // Clear the hold timer
           }
         } else {
-          console.error('Error in real-time status check:', statusError);
+          console.error('Error in real-time update:', statusError);
         }
       } catch (error) {
-        console.error('Error refreshing video analytics:', error);
+        console.error('Error refreshing video data:', error);
       }
     }, 3000); // Update every 3 seconds for responsive updates
     

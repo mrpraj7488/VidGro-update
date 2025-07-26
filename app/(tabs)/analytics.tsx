@@ -98,6 +98,29 @@ export default function Analytics() {
 
       // Fetch recent activity (excluding video_watch rewards)
       const { data: activityData, error: activityError } = await supabase
+        .from('coin_transactions')
+        .select('id, amount, transaction_type, description, created_at')
+        .eq('user_id', user.id)
+        .in('transaction_type', [
+          'video_promotion', 
+          'purchase', 
+          'referral_bonus', 
+          'admin_adjustment', 
+          'vip_purchase', 
+          'ad_stop_purchase',
+          'video_deletion_refund'
+        ])
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (activityError) {
+        console.error('Activity error:', activityError);
+      } else if (activityData) {
+        setRecentActivity(activityData);
+      }
+
+      // Alternative: Use the RPC function if it exists
+      /* const { data: activityData, error: activityError } = await supabase
         .rpc('get_user_transaction_history', { 
           user_uuid: user.id, 
           limit_count: 10,
@@ -107,12 +130,8 @@ export default function Analytics() {
       if (activityError) {
         console.error('Activity error:', activityError);
       } else if (activityData) {
-        // Filter out video_watch transactions for cleaner activity feed
-        const filteredActivity = activityData.filter((activity: any) => 
-          activity.transaction_type !== 'video_watch'
-        );
-        setRecentActivity(filteredActivity);
-      }
+        setRecentActivity(activityData);
+      } */
 
       // Fetch user's videos with analytics
       const { data: videosData, error: videosError } = await supabase
