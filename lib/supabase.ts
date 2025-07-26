@@ -83,28 +83,8 @@ export async function getUserProfile(userId: string) {
   }
 }
 
-// Helper function to get user balance from coin_transactions
-export async function getUserBalance(userId: string) {
-  try {
-    const { data, error } = await supabase
-      .from('coin_transactions')
-      .select('amount')
-      .eq('user_id', userId);
 
-    if (error) {
-      console.error('Error fetching user balance:', error);
-      return 0;
-    }
-
-    const balance = data?.reduce((sum, transaction) => sum + transaction.amount, 0) || 0;
-    return Math.max(balance, 0);
-  } catch (error) {
-    console.error('Error in getUserBalance:', error);
-    return 0;
-  }
-}
-
-// Video completion function using coin_transactions
+// Updated video completion function for new user_balances system
 export async function processVideoCompletion(
   userId: string,
   videoId: string,
@@ -113,419 +93,62 @@ export async function processVideoCompletion(
   try {
     console.log('🎯 processVideoCompletion called:', { userId, videoId, watchDuration });
     
-    // Check if user has already completed this video
-    const { data: existingView, error: viewError } = await supabase
-      .from('video_views')
-      .select('completed')
-      .eq('video_id', videoId)
-      .eq('viewer_id', userId)
-      .single();
-
-    if (existingView?.completed) {
-      console.log('Video already completed by user');
-      return { success: false, error: 'Video already completed' };
-    }
-
-    // Get video details
-    const { data: video, error: videoError } = await supabase
-      .from('videos')
-      .select('*')
-      .eq('id', videoId)
-      .single();
-
-    if (videoError || !video) {
-      console.error('Video not found:', videoError);
-      return { success: false, error: 'Video not found' };
-    }
-
-    // Validate watch duration
-    if (watchDuration < video.duration_seconds) {
-      return { 
-        success: false, 
-        error: 'Insufficient watch time',
-        required: video.duration_seconds,
-        watched: watchDuration
-      };
-    }
-
-    // Record video view
-    const { error: viewInsertError } = await supabase
-      .from('video_views')
-      .insert({
-        video_id: videoId,
-        viewer_id: userId,
-        watched_duration: watchDuration,
-        completed: true,
-        coins_earned: video.coin_reward
+    // Use the new video completion function that works with user_balances
+    const { data, error } = await supabase
+      .rpc('complete_video_watch', {
+        user_uuid: userId,
+        video_uuid: videoId,
+        watch_duration_param: watchDuration
       });
-
-    if (viewInsertError) {
-      console.error('Error recording video view:', viewInsertError);
-      return { success: false, error: 'Failed to record view' };
+      
+    if (error) {
+      console.error('❌ Error in processVideoCompletion:', error);
+      throw error;
     }
-
-    // Award coins via coin_transactions
-    const { error: transactionError } = await supabase
-      .from('coin_transactions')
-      .insert({
-        user_id: userId,
-        amount: video.coin_reward,
-        transaction_type: 'video_watch',
-        description: `Watched video: ${video.title}`,
-        reference_id: videoId
-      });
-
-    if (transactionError) {
-      console.error('Error creating coin transaction:', transactionError);
-      // Rollback video view
-      await supabase
-        .from('video_views')
-        .delete()
-        .eq('video_id', videoId)
-        .eq('viewer_id', userId);
-      return { success: false, error: 'Failed to award coins' };
+    
+    console.log('🎯 Coin update result:', data);
+    
+    if (data.success) {
+      console.log('✅ Coins awarded successfully');
+      return data;
+    } else {
+      console.error('❌ Balance update failed:', data.error);
+      return data;
     }
-
-    // Update video stats
-    const { error: updateError } = await supabase
-      .from('videos')
-      .update({
-        views_count: video.views_count + 1,
-        status: (video.views_count + 1) >= video.target_views ? 'completed' : video.status,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', videoId);
-
-    if (updateError) {
-      console.error('Error updating video stats:', updateError);
-    }
-
-    // Get new balance
-    const newBalance = await getUserBalance(userId);
-
-    console.log('✅ Video completion successful');
-    return {
-      success: true,
-      coins_earned: video.coin_reward,
-      new_balance: newBalance,
-      video_completed: (video.views_count + 1) >= video.target_views
-    };
-
   } catch (error) {
     console.error('❌ processVideoCompletion error:', error);
     return { success: false, error: error.message };
   }
 }
 
-// Legacy function name for backward compatibility
-export async function complete_video_watch(
-  userId: string,
-  videoId: string,
-  watchDuration: number
-) {
-  return processVideoCompletion(userId, videoId, watchDuration);
-}
-
-// Create video with balance deduction using coin_transactions
-export async function createVideoWithBalanceDeduction(
-  userId: string,
-  youtubeUrl: string,
-  title: string,
-  durationSeconds: number,
-  targetViews: number,
-  coinCost: number,
-  coinReward: number
-) {
+// Helper function to get user balance from user_balances table
+export async function getUserBalanceFast(userId: string) {
   try {
-    // Check user balance
-    const currentBalance = await getUserBalance(userId);
-    if (currentBalance < coinCost) {
-      return { 
-        success: false, 
-        error: `Insufficient coins. Required: ${coinCost}, Available: ${currentBalance}` 
-      };
-    }
-
-    // Create video
-    const { data: video, error: videoError } = await supabase
-      .from('videos')
-      .insert({
-        user_id: userId,
-        youtube_url: youtubeUrl,
-        title: title,
-        duration_seconds: durationSeconds,
-        target_views: targetViews,
-        coin_cost: coinCost,
-        coin_reward: coinReward,
-        status: 'on_hold',
-        hold_until: new Date(Date.now() + 10 * 60 * 1000).toISOString() // 10 minutes hold
-      })
-      .select()
-      .single();
-
-    if (videoError) {
-      console.error('Error creating video:', videoError);
-      return { success: false, error: 'Failed to create video' };
-    }
-
-    // Deduct coins via coin_transactions
-    const { error: transactionError } = await supabase
-      .from('coin_transactions')
-      .insert({
-        user_id: userId,
-        amount: -coinCost,
-        transaction_type: 'video_promotion',
-        description: `Video promotion: ${title}`,
-        reference_id: video.id
-      });
-
-    if (transactionError) {
-      console.error('Error creating coin transaction:', transactionError);
-      // Rollback video creation
-      await supabase.from('videos').delete().eq('id', video.id);
-      return { success: false, error: 'Failed to deduct coins' };
-    }
-
-    const newBalance = await getUserBalance(userId);
-
-    return {
-      success: true,
-      video_id: video.id,
-      new_balance: newBalance,
-      message: 'Video created successfully and is on hold for 10 minutes'
-    };
-
-  } catch (error) {
-    console.error('Error in createVideoWithBalanceDeduction:', error);
-    return { success: false, error: error.message };
-  }
-}
-
-// Legacy function name for backward compatibility
-export async function create_video_with_balance_deduction(
-  userId: string,
-  youtubeUrl: string,
-  title: string,
-  durationSeconds: number,
-  targetViews: number,
-  coinCost: number,
-  coinReward: number
-) {
-  return createVideoWithBalanceDeduction(
-    userId, youtubeUrl, title, durationSeconds, targetViews, coinCost, coinReward
-  );
-}
-
-// Repromote video with balance deduction using coin_transactions
-export async function repromoteVideoWithBalance(
-  userId: string,
-  videoId: string,
-  newTargetViews: number,
-  newDuration: number,
-  coinCost: number
-) {
-  try {
-    // Check user balance
-    const currentBalance = await getUserBalance(userId);
-    if (currentBalance < coinCost) {
-      return { 
-        success: false, 
-        error: `Insufficient coins. Required: ${coinCost}, Available: ${currentBalance}` 
-      };
-    }
-
-    // Get video details
-    const { data: video, error: videoError } = await supabase
-      .from('videos')
-      .select('*')
-      .eq('id', videoId)
+    const { data, error } = await supabase
+      .from('user_balances')
+      .select('current_balance, last_transaction_at')
       .eq('user_id', userId)
       .single();
 
-    if (videoError || !video) {
-      return { success: false, error: 'Video not found' };
-    }
-
-    // Update video for repromotion
-    const { error: updateError } = await supabase
-      .from('videos')
-      .update({
-        target_views: newTargetViews,
-        duration_seconds: newDuration,
-        coin_cost: video.coin_cost + coinCost,
-        status: 'repromoted',
-        repromoted_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', videoId);
-
-    if (updateError) {
-      console.error('Error updating video:', updateError);
-      return { success: false, error: 'Failed to update video' };
-    }
-
-    // Deduct coins via coin_transactions
-    const { error: transactionError } = await supabase
-      .from('coin_transactions')
-      .insert({
-        user_id: userId,
-        amount: -coinCost,
-        transaction_type: 'video_promotion',
-        description: `Video repromotion: ${video.title}`,
-        reference_id: videoId
-      });
-
-    if (transactionError) {
-      console.error('Error creating coin transaction:', transactionError);
-      return { success: false, error: 'Failed to deduct coins' };
-    }
-
-    const newBalance = await getUserBalance(userId);
-
-    return {
-      success: true,
-      new_balance: newBalance,
-      message: 'Video repromoted successfully'
-    };
-
-  } catch (error) {
-    console.error('Error in repromoteVideoWithBalance:', error);
-    return { success: false, error: error.message };
-  }
-}
-
-// Legacy function name for backward compatibility
-export async function repromote_video_with_balance(
-  userId: string,
-  videoId: string,
-  newTargetViews: number,
-  newDuration: number,
-  coinCost: number
-) {
-  return repromoteVideoWithBalance(userId, videoId, newTargetViews, newDuration, coinCost);
-}
-
-// Get user analytics using coin_transactions
-export async function getUserAnalyticsSummary(userId: string) {
-  try {
-    // Get video statistics
-    const { data: videos, error: videosError } = await supabase
-      .from('videos')
-      .select('status')
-      .eq('user_id', userId);
-
-    if (videosError) {
-      console.error('Error fetching videos:', videosError);
+    if (error) {
+      console.error('Error fetching user balance:', error);
       return null;
     }
 
-    // Get coins earned from video watching
-    const { data: earnedTransactions, error: earnedError } = await supabase
-      .from('coin_transactions')
-      .select('amount')
-      .eq('user_id', userId)
-      .eq('transaction_type', 'video_watch');
-
-    if (earnedError) {
-      console.error('Error fetching earned coins:', earnedError);
-      return null;
-    }
-
-    const totalVideosPromoted = videos?.length || 0;
-    const activeVideos = videos?.filter(v => v.status === 'active').length || 0;
-    const completedVideos = videos?.filter(v => v.status === 'completed').length || 0;
-    const onHoldVideos = videos?.filter(v => v.status === 'on_hold').length || 0;
-    const totalCoinsEarned = earnedTransactions?.reduce((sum, t) => sum + t.amount, 0) || 0;
-
     return {
-      total_videos_promoted: totalVideosPromoted,
-      total_coins_earned: totalCoinsEarned,
-      active_videos: activeVideos,
-      completed_videos: completedVideos,
-      on_hold_videos: onHoldVideos
+      balance: data.current_balance,
+      last_updated: data.last_transaction_at
     };
-
   } catch (error) {
-    console.error('Error in getUserAnalyticsSummary:', error);
+    console.error('Error in getUserBalanceFast:', error);
     return null;
   }
 }
 
-// Legacy function name for backward compatibility
-export async function get_user_analytics_summary_fixed(userId: string) {
-  const result = await getUserAnalyticsSummary(userId);
-  return result ? [result] : [];
-}
-
-// Delete video with refund using coin_transactions
-export async function deleteVideoWithRefund(userId: string, videoId: string) {
-  try {
-    // Get video details
-    const { data: video, error: videoError } = await supabase
-      .from('videos')
-      .select('*')
-      .eq('id', videoId)
-      .eq('user_id', userId)
-      .single();
-
-    if (videoError || !video) {
-      return { success: false, error: 'Video not found' };
-    }
-
-    // Calculate refund (100% within 10 minutes, 80% after)
-    const createdTime = new Date(video.created_at);
-    const now = new Date();
-    const minutesSinceCreation = Math.floor((now.getTime() - createdTime.getTime()) / (1000 * 60));
-    const refundPercentage = minutesSinceCreation <= 10 ? 100 : 80;
-    const refundAmount = Math.floor(video.coin_cost * (refundPercentage / 100));
-
-    // Delete video
-    const { error: deleteError } = await supabase
-      .from('videos')
-      .delete()
-      .eq('id', videoId);
-
-    if (deleteError) {
-      console.error('Error deleting video:', deleteError);
-      return { success: false, error: 'Failed to delete video' };
-    }
-
-    // Add refund transaction
-    if (refundAmount > 0) {
-      const { error: transactionError } = await supabase
-        .from('coin_transactions')
-        .insert({
-          user_id: userId,
-          amount: refundAmount,
-          transaction_type: 'video_deletion_refund',
-          description: `Refund for deleted video: ${video.title} (${refundPercentage}%)`,
-          reference_id: videoId
-        });
-
-      if (transactionError) {
-        console.error('Error creating refund transaction:', transactionError);
-        return { success: false, error: 'Video deleted but refund failed' };
-      }
-    }
-
-    const newBalance = await getUserBalance(userId);
-
-    return {
-      success: true,
-      refund_amount: refundAmount,
-      new_balance: newBalance,
-      message: `Video deleted successfully. ${refundAmount} coins refunded (${refundPercentage}%)`
-    };
-
-  } catch (error) {
-    console.error('Error in deleteVideoWithRefund:', error);
-    return { success: false, error: error.message };
-  }
-}
-
-// Get transaction history
+// Helper function to get transaction history (if you still have coin_transactions for history)
 export async function getUserTransactionHistory(userId: string, limit: number = 50, offset: number = 0) {
   try {
+    // If you still have coin_transactions for history, query it directly
     const { data, error } = await supabase
       .from('coin_transactions')
       .select('*')
@@ -545,10 +168,10 @@ export async function getUserTransactionHistory(userId: string, limit: number = 
   }
 }
 
-// Get next video queue
+// Helper function to get next video for user
 export async function getNextVideoQueueEnhanced(userId: string) {
   try {
-    // Get videos that user hasn't completed
+    // Direct query to get available videos
     const { data, error } = await supabase
       .from('videos')
       .select(`
@@ -573,18 +196,8 @@ export async function getNextVideoQueueEnhanced(userId: string) {
       return [];
     }
 
-    // Filter out videos user has already completed
-    const { data: completedViews } = await supabase
-      .from('video_views')
-      .select('video_id')
-      .eq('viewer_id', userId)
-      .eq('completed', true);
-
-    const completedVideoIds = completedViews?.map(v => v.video_id) || [];
-    const availableVideos = data?.filter(video => !completedVideoIds.includes(video.id)) || [];
-
     // Transform data to match expected format
-    return availableVideos.map(video => ({
+    return data?.map(video => ({
       video_id: video.id,
       youtube_url: video.youtube_url,
       title: video.title,
@@ -593,64 +206,83 @@ export async function getNextVideoQueueEnhanced(userId: string) {
       views_count: video.views_count,
       target_views: video.target_views,
       status: video.status
-    }));
-
+    })) || [];
   } catch (error) {
     console.error('Error in getNextVideoQueueEnhanced:', error);
     return [];
   }
 }
 
-// Create video with hold (main function used by promote tab)
+// Helper function to create video with hold
 export async function createVideoWithHold(
   coinCost: number,
   coinReward: number,
   durationSeconds: number,
-  targetViews: number,
+ targetViews: number,
   title: string,
   userId: string,
   videoId: string
 ) {
-  return createVideoWithBalanceDeduction(
-    userId,
-    videoId,
-    title,
-    durationSeconds,
-    targetViews,
+  console.log('Creating video with parameters:', {
     coinCost,
-    coinReward
-  );
-}
+    coinReward,
+    durationSeconds,
+   targetViews,
+    title,
+    userId,
+    videoId
+  });
 
-// Get balance system performance metrics (simplified for coin_transactions)
-export async function getBalanceSystemMetrics() {
   try {
-    // Get basic metrics from coin_transactions
-    const { data, error } = await supabase
-      .from('coin_transactions')
-      .select('user_id, amount, transaction_type');
+    // Use the new video creation function that works with user_balances
+    const { data, error } = await supabase.rpc('create_video_with_balance_deduction', {
+      user_uuid: userId,
+      youtube_url_param: videoId,
+      title_param: title,
+      duration_seconds_param: durationSeconds,
+      target_views_param: targetViews,
+      coin_cost_param: coinCost,
+      coin_reward_param: coinReward
+    });
 
     if (error) {
-      console.error('Error fetching metrics:', error);
+      console.error('Error creating video:', error);
       return null;
     }
 
-    const uniqueUsers = new Set(data?.map(t => t.user_id)).size;
-    const totalTransactions = data?.length || 0;
-    const avgTransactionsPerUser = uniqueUsers > 0 ? totalTransactions / uniqueUsers : 0;
+    return data;
+  } catch (error) {
+    console.error('Error in createVideoWithHold:', error);
+    return null;
+  }
+}
+
+// Helper function to get balance system performance metrics
+export async function getBalanceSystemMetrics() {
+  try {
+    // Simple metrics from user_balances table
+    const { data: balanceData, error: balanceError } = await supabase
+      .from('user_balances')
+      .select('current_balance, created_at, updated_at');
+
+    if (balanceError) {
+      console.error('Error fetching balance metrics:', balanceError);
+      return null;
+    }
+
+    // Calculate basic metrics
+    const totalUsers = balanceData?.length || 0;
+    const totalBalance = balanceData?.reduce((sum, user) => sum + user.current_balance, 0) || 0;
+    const avgBalance = totalUsers > 0 ? Math.round(totalBalance / totalUsers) : 0;
+}
 
     return {
-      old_system_size_bytes: 1000000, // Mock data
-      new_system_size_bytes: 800000,
-      storage_reduction_percent: 20,
-      total_users: uniqueUsers,
-      total_transactions: totalTransactions,
-      avg_transactions_per_user: avgTransactionsPerUser,
+      total_users: totalUsers,
+      total_balance: totalBalance,
+      average_balance: avgBalance,
       performance_improvement: 'SIGNIFICANT'
     };
-    
   } catch (error) {
     console.error('Error in getBalanceSystemMetrics:', error);
     return null;
   }
-}

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { supabase, getUserProfile, getUserBalance } from '../lib/supabase';
+import { supabase, getUserProfile } from '../lib/supabase';
 import { User } from '@supabase/supabase-js';
 
 interface Profile {
@@ -83,16 +83,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       
-      // Get current balance from coin_transactions
-      const currentBalance = await getUserBalance(userId);
+      // Get current balance from user_balances table
+      const { data: balanceData, error: balanceError } = await supabase
+        .from('user_balances')
+        .select('current_balance')
+        .eq('user_id', userId)
+        .single();
         
       if (profileData) {
         console.log('Profile loaded successfully:', profileData.username);
         
-        // Merge profile with current balance from coin_transactions
+        // Merge profile with current balance
         setProfile({
           ...profileData,
-          coins: currentBalance
+          coins: balanceData?.current_balance || 0
         });
       } else {
         console.warn('No profile data returned for user:', userId);
@@ -106,13 +110,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             .eq('id', userId)
             .single();
             
-          const retryBalance = await getUserBalance(userId);
+          const { data: retryBalanceData } = await supabase
+            .from('user_balances')
+            .select('current_balance')
+            .eq('user_id', userId)
+            .single();
             
           if (retryProfileData) {
             console.log('Profile loaded on retry:', retryProfileData.username);
             setProfile({
               ...retryProfileData,
-              coins: retryBalance
+              coins: retryBalanceData?.current_balance || 0
             });
           } else {
             console.error('Profile still not found after retry');
@@ -143,12 +151,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             .eq('id', userId)
             .single();
             
-          const retryBalance = await getUserBalance(userId);
+          const { data: retryBalanceData } = await supabase
+            .from('user_balances')
+            .select('current_balance')
+            .eq('user_id', userId)
+            .single();
             
           if (retryProfileData) {
             setProfile({
               ...retryProfileData,
-              coins: retryBalance
+              coins: retryBalanceData?.current_balance || 0
             });
           } else {
             // Set a fallback profile to prevent crashes
