@@ -1,28 +1,5 @@
-/*
-  # Enhanced Video Tracking System
-
-  1. Database Schema Enhancements
-    - Add engagement tracking columns to coin_transactions table
-    - Add engagement metrics columns to videos table
-    - Create auto-expiry system for coin_transactions
-    - Add performance indexes
-
-  2. Real-Time Data Flow System
-    - Create triggers for automatic data aggregation
-    - Set up view count tracking integration
-    - Implement engagement duration calculation
-    - Create promotion queue management
-
-  3. Performance Optimization
-    - Add strategic indexes for query performance
-    - Implement efficient cleanup process
-    - Create auto-deletion system for expired transactions
-
-  4. Security and Data Integrity
-    - Ensure proper data validation
-    - Maintain referential integrity
-    - Add proper constraints and checks
-*/
+-- Enhanced Video Tracking System - Clean Migration Script
+-- Run this script to add engagement tracking and auto-cleanup features
 
 -- Add new columns to coin_transactions table for enhanced tracking
 DO $$
@@ -89,8 +66,8 @@ BEGIN
 END $$;
 
 -- Create indexes for performance optimization
-CREATE INDEX IF NOT EXISTS idx_coin_transactions_video_tracking 
-ON coin_transactions(video_id, user_id, engagement_duration, created_at) 
+CREATE INDEX IF NOT EXISTS idx_coin_transactions_reference_tracking 
+ON coin_transactions(reference_id, user_id, engagement_duration, created_at) 
 WHERE transaction_type = 'video_watch';
 
 CREATE INDEX IF NOT EXISTS idx_coin_transactions_expires_at 
@@ -204,6 +181,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Drop existing functions first to avoid return type conflicts
+DROP FUNCTION IF EXISTS get_next_video_queue_enhanced(UUID);
+
 -- Enhanced video queue function that excludes user's own videos
 CREATE OR REPLACE FUNCTION get_next_video_queue_enhanced(user_uuid UUID)
 RETURNS TABLE(
@@ -245,6 +225,9 @@ BEGIN
   LIMIT 50;
 END;
 $$ LANGUAGE plpgsql;
+
+-- Drop existing functions first to avoid return type conflicts
+DROP FUNCTION IF EXISTS award_coins_with_engagement_tracking(UUID, UUID, INTEGER, INTEGER);
 
 -- Enhanced award coins function with engagement tracking
 CREATE OR REPLACE FUNCTION award_coins_with_engagement_tracking(
@@ -350,6 +333,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Drop existing function first
+DROP FUNCTION IF EXISTS award_coins_simple_no_filters(UUID, UUID, INTEGER);
+
 -- Update existing award_coins_simple_no_filters to use engagement tracking
 CREATE OR REPLACE FUNCTION award_coins_simple_no_filters(
   user_uuid UUID,
@@ -363,8 +349,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Create scheduled cleanup job (Note: This requires pg_cron extension)
--- For now, we'll create a function that can be called periodically
+-- Create scheduled cleanup job function
 CREATE OR REPLACE FUNCTION schedule_cleanup_expired_transactions()
 RETURNS TEXT AS $$
 DECLARE
@@ -375,6 +360,9 @@ BEGIN
   RETURN 'Cleaned up ' || cleanup_count || ' expired transaction records';
 END;
 $$ LANGUAGE plpgsql;
+
+-- Drop existing function first
+DROP FUNCTION IF EXISTS get_next_video_queue_simple(UUID);
 
 -- Update get_next_video_queue_simple to use the enhanced version
 CREATE OR REPLACE FUNCTION get_next_video_queue_simple(user_uuid UUID)
@@ -402,6 +390,9 @@ BEGIN
   FROM get_next_video_queue_enhanced(user_uuid) evq;
 END;
 $$ LANGUAGE plpgsql;
+
+-- Drop existing function first
+DROP FUNCTION IF EXISTS get_video_engagement_analytics(UUID);
 
 -- Create function to get video engagement analytics
 CREATE OR REPLACE FUNCTION get_video_engagement_analytics(video_uuid UUID)
