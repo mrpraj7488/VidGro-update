@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, Linking } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { useAuth } from '../../contexts/AuthContext';
-import { useVideoStore } from '../../store/videoStore';
-import { awardCoinsForVideo } from '../../lib/supabase';
-import GlobalHeader from '../../components/GlobalHeader';
+import { useAuth } from '@/contexts/AuthContext';
+import { useVideoStore } from '@/store/videoStore';
+import { awardCoinsForVideo } from '@/lib/supabase';
+import GlobalHeader from '@/components/GlobalHeader';
 import { ExternalLink } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
 

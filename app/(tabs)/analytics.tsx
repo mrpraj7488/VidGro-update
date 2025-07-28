@@ -9,10 +9,10 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { useRouter } from 'expo-router';
-import GlobalHeader from '../../components/GlobalHeader';
+import GlobalHeader from '@/components/GlobalHeader';
 import { ChartBar as BarChart3, Eye, Coins, Play, Pause, CircleCheck as CheckCircle, Timer, CreditCard as Edit3, Activity, TrendingUp, ChevronDown, ChevronUp } from 'lucide-react-native';
 
 interface UserAnalytics {

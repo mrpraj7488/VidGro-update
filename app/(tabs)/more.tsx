@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
-import GlobalHeader from '../../components/GlobalHeader';
+import GlobalHeader from '@/components/GlobalHeader';
 import { DollarSign, Crown, ShieldOff, Star, Share2, Shield, FileText, Globe, Settings, MessageCircle, LogOut, Trash2, User, X, ChartBar as BarChart3 } from 'lucide-react-native';
 
 export default function MoreTab() {

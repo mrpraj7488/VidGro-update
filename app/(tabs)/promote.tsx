@@ -13,10 +13,10 @@ import {
 } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
 import { useRouter } from 'expo-router';
-import { createVideoWithHold } from '../../lib/supabase';
+import { createVideoWithHold } from '@/lib/supabase';
 import { validateYouTubeUrl, validateVideoTitle, extractYouTubeVideoId } from '../../utils/validation';
-import VideoPreview from '../../components/VideoPreview';
-import GlobalHeader from '../../components/GlobalHeader';
+import VideoPreview from '@/components/VideoPreview';
+import GlobalHeader from '@/components/GlobalHeader';
 import { Play, Eye, Clock, Crown } from 'lucide-react-native';
 
 export default function PromoteTab() {

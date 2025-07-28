@@ -15,9 +15,9 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useAuth } from '@/contexts/AuthContext';
-import { useVideoStore } from '@/store/videoStore';
-import { supabase } from '@/lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
+import { useVideoStore } from '../store/videoStore';
+import { supabase } from '../lib/supabase';
 import { ArrowLeft, Eye, Clock, Trash2, Play, Timer, ChevronDown, Check, MoveVertical as MoreVertical, CreditCard as Edit3 } from 'lucide-react-native';
 import Animated, {
   useSharedValue,
