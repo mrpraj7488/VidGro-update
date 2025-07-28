@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { useAuth } from '../../contexts/AuthContext';
 import { useRouter } from 'expo-router';
-import { createVideoWithHold } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 import { validateYouTubeUrl, validateVideoTitle, extractYouTubeVideoId } from '../../utils/validation';
 import VideoPreview from '@/components/VideoPreview';
 import GlobalHeader from '@/components/GlobalHeader';
@@ -125,17 +125,17 @@ export default function PromoteTab() {
       // Calculate dynamic coin reward based on duration
       const coinReward = calculateCoinsByDuration(videoDuration);
       
-      const result = await createVideoWithHold(
-        cost,
-        coinReward,
-        videoDuration,
-        targetViews,
-        videoTitle,
-        user.id,
-        extractedVideoId
-      );
+      const { data: result, error } = await supabase.rpc('create_video_simple', {
+        coin_cost_param: cost,
+        coin_reward_param: coinReward,
+        duration_seconds_param: videoDuration,
+        target_views_param: targetViews,
+        title_param: videoTitle,
+        user_uuid: user.id,
+        youtube_url_param: extractedVideoId
+      });
 
-      if (result) {
+      if (!error && result) {
         await refreshProfile();
         const vipDiscount = getVipDiscount();
         const discountText = vipDiscount > 0 ? `\n\n👑 VIP Discount Applied: ${vipDiscount} coins saved!` : '';
@@ -153,7 +153,7 @@ export default function PromoteTab() {
           ]
         );
       } else {
-        Alert.alert('Error', 'Failed to promote video. Please try again.');
+        Alert.alert('Error', error?.message || 'Failed to promote video. Please try again.');
       }
     } catch (error) {
       console.error('Error promoting video:', error);

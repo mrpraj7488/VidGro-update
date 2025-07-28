@@ -572,11 +572,11 @@ export default function ViewTab() {
       const result = await awardCoinsForVideo(
         user.id,
         currentVideo.video_id,
-        currentVideo.duration_seconds,
+        watchTimerRef.current,
         engagementDuration
       );
 
-      if (result.success) {
+      if (result.success || result.coins_awarded > 0) {
         await refreshProfile();
         
         if (autoSkipEnabledRef.current) {

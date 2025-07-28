@@ -57,10 +57,11 @@ export async function awardCoinsForVideo(
     console.log('💰 Awarding coins:', { userId, videoId, watchDuration, engagementDuration });
     
     // Use enhanced award function with engagement tracking
-    const { data, error } = await supabase.rpc('award_coins_simple_no_filters', {
+    const { data, error } = await supabase.rpc('award_coins_with_engagement_tracking', {
         user_uuid: userId,
         video_uuid: videoId,
-        watch_duration: watchDuration
+        watch_duration: watchDuration,
+        engagement_duration: engagementDuration || watchDuration
       });
       
     if (error) {
@@ -83,8 +84,8 @@ export async function getVideoQueue(userId: string) {
   try {
     console.log('🔍 Supabase: Fetching video queue for user:', userId);
     
-    // Use enhanced queue function that excludes user's own videos
-    const { data, error } = await supabase.rpc('get_next_video_queue_simple', {
+    // Use enhanced queue function that excludes user's own videos and already watched videos
+    const { data, error } = await supabase.rpc('get_next_video_queue_enhanced', {
       user_uuid: userId
     });
 
@@ -101,38 +102,6 @@ export async function getVideoQueue(userId: string) {
   }
 }
 
-// Create video promotion with hold period
-export async function createVideoWithHold(
-  coinCost: number,
-  coinReward: number,
-  durationSeconds: number,
-  targetViews: number,
-  title: string,
-  userId: string,
-  youtubeUrl: string
-) {
-  try {
-    const { data, error } = await supabase.rpc('create_video_simple', {
-      coin_cost_param: coinCost,
-      coin_reward_param: coinReward,
-      duration_seconds_param: durationSeconds,
-      target_views_param: targetViews,
-      title_param: title,
-      user_uuid: userId,
-      youtube_url_param: youtubeUrl
-    });
-
-    if (error) {
-      console.error('Error creating video:', error);
-      return null;
-    }
-
-    return data;
-  } catch (error) {
-    console.error('createVideoWithHold error:', error);
-    return null;
-  }
-}
 
 // Get video engagement analytics
 export async function getVideoEngagementAnalytics(videoId: string) {

@@ -10,7 +10,7 @@ interface Video {
   views_count: number;
   target_views: number;
   status: string;
-  user_id?: string;
+  user_id: string;
 }
 
 interface VideoState {
