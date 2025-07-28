@@ -3,51 +3,6 @@ export interface ValidationResult {
   error?: string;
 }
 
-export function validateEmail(email: string): ValidationResult {
-  if (!email) {
-    return { isValid: false, error: 'Email is required' };
-  }
-
-  if (!email.includes('@') || !email.includes('.')) {
-    return { isValid: false, error: 'Please enter a valid email format' };
-  }
-
-  return { isValid: true };
-}
-
-export function validatePassword(password: string): ValidationResult {
-  if (!password) {
-    return { isValid: false, error: 'Password is required' };
-  }
-
-  if (password.length < 6) {
-    return { isValid: false, error: 'Password must be at least 6 characters long' };
-  }
-
-  return { isValid: true };
-}
-
-export function validateUsername(username: string): ValidationResult {
-  if (!username) {
-    return { isValid: false, error: 'Username is required' };
-  }
-
-  if (username.length < 3) {
-    return { isValid: false, error: 'Username must be at least 3 characters long' };
-  }
-
-  if (username.length > 20) {
-    return { isValid: false, error: 'Username must be less than 20 characters' };
-  }
-
-  const usernameRegex = /^[a-zA-Z0-9_]+$/;
-  if (!usernameRegex.test(username)) {
-    return { isValid: false, error: 'Username can only contain letters, numbers, and underscores' };
-  }
-
-  return { isValid: true };
-}
-
 export function validateYouTubeUrl(url: string): ValidationResult {
   if (!url) {
     return { isValid: false, error: 'YouTube URL is required' };
@@ -108,30 +63,3 @@ export function extractYouTubeVideoId(url: string): string | null {
 
   return null;
 }
-
-export function calculatePromotionCost(views: number, duration: number, isVip: boolean = false): number {
-  // Updated with higher cost calculation to match promote tab
-  const baseCost = Math.ceil((views * duration) / 50 * 8);
-  
-  if (isVip) {
-    return Math.ceil(baseCost * 0.9);
-  }
-  
-  return baseCost;
-}
-
-export function calculateVipDiscount(views: number, duration: number): number {
-  const baseCost = Math.ceil((views * duration) / 50 * 8);
-  return Math.ceil(baseCost * 0.1);
-}
-
-export default {
-  validateEmail,
-  validatePassword,
-  validateUsername,
-  validateYouTubeUrl,
-  validateVideoTitle,
-  extractYouTubeVideoId,
-  calculatePromotionCost,
-  calculateVipDiscount,
-};
