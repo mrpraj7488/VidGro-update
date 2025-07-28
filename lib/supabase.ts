@@ -54,34 +54,10 @@ export async function awardCoinsForVideo(
   }
 
   try {
-    // Use enhanced award function with engagement tracking
-    const { data, error } = await supabase
-      .rpc('award_coins_with_engagement_tracking', {
-        user_uuid: userId,
-        video_uuid: videoId,
-        watch_duration: watchDuration,
-        engagement_duration: engagementDuration || watchDuration
-      });
-      
-    if (error) {
-      console.error('Error awarding coins with engagement:', error);
-      // Fallback to simple version
-      return await awardCoinsSimple(userId, videoId, watchDuration);
-    }
+    console.log('💰 Awarding coins:', { userId, videoId, watchDuration, engagementDuration });
     
-    return data;
-  } catch (error) {
-    console.error('awardCoinsForVideo error:', error);
-    // Fallback to simple version
-    return await awardCoinsSimple(userId, videoId, watchDuration);
-  }
-}
-
-// Fallback function for simple coin awarding
-async function awardCoinsSimple(userId: string, videoId: string, watchDuration: number) {
-  try {
-    const { data, error } = await supabase
-      .rpc('award_coins_simple_no_filters', {
+    // Use enhanced award function with engagement tracking
+    const { data, error } = await supabase.rpc('award_coins_simple_no_filters', {
         user_uuid: userId,
         video_uuid: videoId,
         watch_duration: watchDuration
@@ -89,13 +65,14 @@ async function awardCoinsSimple(userId: string, videoId: string, watchDuration: 
       
     if (error) {
       console.error('Error awarding coins:', error);
-      return { success: false, error: error.message };
+      throw new Error(`Coin award failed: ${error.message}`);
     }
     
+    console.log('💰 Coins awarded successfully:', data);
     return data;
   } catch (error) {
-    console.error('awardCoinsSimple error:', error);
-    return { success: false, error: error.message };
+    console.error('awardCoinsForVideo error:', error);
+    return { success: false, error: error.message || 'Failed to award coins' };
   }
 }
 
@@ -104,20 +81,23 @@ export async function getVideoQueue(userId: string) {
   if (!userId) return null;
 
   try {
+    console.log('🔍 Supabase: Fetching video queue for user:', userId);
+    
     // Use enhanced queue function that excludes user's own videos
-    const { data, error } = await supabase.rpc('get_next_video_queue_enhanced', {
+    const { data, error } = await supabase.rpc('get_next_video_queue_simple', {
       user_uuid: userId
     });
 
     if (error) {
       console.error('Error fetching video queue:', error);
-      return null;
+      throw new Error(`Database error: ${error.message}`);
     }
 
+    console.log('🔍 Supabase: Video queue data received:', data?.length || 0, 'videos');
     return data;
   } catch (error) {
     console.error('getVideoQueue error:', error);
-    return null;
+    throw error;
   }
 }
 

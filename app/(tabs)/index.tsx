@@ -11,7 +11,7 @@ import { AppState } from 'react-native';
 
 export default function ViewTab() {
   const { user, profile, refreshProfile } = useAuth();
-  const { videoQueue, currentVideoIndex, isLoading, fetchVideos, getCurrentVideo, moveToNextVideo } = useVideoStore();
+  const { videoQueue, currentVideoIndex, isLoading, error: storeError, fetchVideos, getCurrentVideo, moveToNextVideo } = useVideoStore();
   const [menuVisible, setMenuVisible] = useState(false);
   const [watchTimer, setWatchTimer] = useState(0);
   const [autoSkipEnabled, setAutoSkipEnabled] = useState(true);
@@ -521,10 +521,13 @@ export default function ViewTab() {
 
   useFocusEffect(
     useCallback(() => {
-      if (user && !isLoading && videoQueue.length === 0) {
-        fetchVideos(user.id);
+      if (user) {
+        console.log('🔄 Focus effect triggered, fetching videos for user:', user.id);
+        fetchVideos(user.id).catch(error => {
+          console.error('❌ Error fetching videos in focus effect:', error);
+        });
       }
-    }, [user, isLoading, videoQueue.length, fetchVideos])
+    }, [user, fetchVideos])
   );
 
   const skipToNextVideo = useCallback(() => {
@@ -850,6 +853,7 @@ export default function ViewTab() {
   };
 
   if (isLoading) {
+    console.log('📱 View tab showing loading state');
     return (
       <View style={styles.container}>
         <GlobalHeader 
@@ -860,12 +864,22 @@ export default function ViewTab() {
         />
         <View style={styles.loadingContainer}>
           <Text style={styles.loadingText}>Loading videos...</Text>
+          {storeError && (
+            <Text style={styles.errorText}>Error: {storeError}</Text>
+          )}
+          <TouchableOpacity 
+            style={styles.retryButton}
+            onPress={() => user && fetchVideos(user.id)}
+          >
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
         </View>
       </View>
     );
   }
 
   if (!currentVideo) {
+    console.log('📱 No current video available, queue length:', videoQueue.length);
     return (
       <View style={styles.container}>
         <GlobalHeader 
@@ -875,13 +889,18 @@ export default function ViewTab() {
           setMenuVisible={setMenuVisible} 
         />
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>No videos available</Text>
+          <Text style={styles.emptyText}>
+            {videoQueue.length === 0 ? 'No videos available' : 'Loading next video...'}
+          </Text>
           <TouchableOpacity 
             style={styles.refreshButton}
             onPress={() => user && fetchVideos(user.id)}
           >
             <Text style={styles.refreshButtonText}>Refresh</Text>
           </TouchableOpacity>
+          {storeError && (
+            <Text style={styles.errorText}>Error: {storeError}</Text>
+          )}
         </View>
       </View>
     );
@@ -1160,5 +1179,23 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: 'white',
     textAlign: 'center',
+  },
+  errorText: {
+    fontSize: 14,
+    color: '#E74C3C',
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  retryButton: {
+    backgroundColor: '#3498DB',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 16,
+  },
+  retryButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

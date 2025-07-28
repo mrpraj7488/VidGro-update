@@ -17,6 +17,7 @@ interface VideoState {
   videoQueue: Video[];
   currentVideoIndex: number;
   isLoading: boolean;
+  error: string | null;
   fetchVideos: (userId: string) => Promise<void>;
   getCurrentVideo: () => Video | null;
   moveToNextVideo: () => void;
@@ -27,27 +28,42 @@ export const useVideoStore = create<VideoState>((set, get) => ({
   videoQueue: [],
   currentVideoIndex: 0,
   isLoading: false,
+  error: null,
 
   fetchVideos: async (userId: string) => {
-    set({ isLoading: true });
+    console.log('🎬 VideoStore: Starting to fetch videos for user:', userId);
+    set({ isLoading: true, error: null });
+    
     try {
       const videos = await getVideoQueue(userId);
+      console.log('🎬 VideoStore: Received videos from API:', videos?.length || 0);
       
       if (videos && videos.length > 0) {
         // Filter out user's own videos from the feed
         const filteredVideos = videos.filter(video => video.user_id !== userId);
+        console.log('🎬 VideoStore: Filtered videos (excluding own):', filteredVideos.length);
         
         set({ 
           videoQueue: filteredVideos, 
           currentVideoIndex: 0,
-          isLoading: false 
+          isLoading: false,
+          error: null
         });
       } else {
-        set({ videoQueue: [], currentVideoIndex: 0, isLoading: false });
+        console.log('🎬 VideoStore: No videos received from API');
+        set({ 
+          videoQueue: [], 
+          currentVideoIndex: 0, 
+          isLoading: false,
+          error: 'No videos available at the moment'
+        });
       }
     } catch (error) {
       console.error('Error fetching videos:', error);
-      set({ isLoading: false });
+      set({ 
+        isLoading: false, 
+        error: error instanceof Error ? error.message : 'Failed to load videos'
+      });
     }
   },
 
@@ -70,7 +86,8 @@ export const useVideoStore = create<VideoState>((set, get) => ({
     set({ 
       videoQueue: [], 
       currentVideoIndex: 0, 
-      isLoading: false
+      isLoading: false,
+      error: null
     });
   },
 }));
