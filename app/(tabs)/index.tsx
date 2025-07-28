@@ -7,6 +7,7 @@ import { awardCoinsForVideo } from '@/lib/supabase';
 import GlobalHeader from '@/components/GlobalHeader';
 import { ExternalLink } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { AppState } from 'react-native';
 
 export default function ViewTab() {
   const { user, profile, refreshProfile } = useAuth();
@@ -25,6 +26,8 @@ export default function ViewTab() {
   const [isVideoPlaying, setIsVideoPlaying] = useState(false);
   const [timerPaused, setTimerPaused] = useState(true);
   const [videoLoadedSuccessfully, setVideoLoadedSuccessfully] = useState(false);
+  const [appInBackground, setAppInBackground] = useState(false);
+  const [wasPlayingBeforeBackground, setWasPlayingBeforeBackground] = useState(false);
   
   const watchTimerRef = useRef(0);
   const isVideoPlayingRef = useRef(false);
@@ -42,6 +45,90 @@ export default function ViewTab() {
   
   const currentVideo = getCurrentVideo();
 
+  // Tab visibility and background detection
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState: string) => {
+      if (nextAppState === 'background' || nextAppState === 'inactive') {
+        // App going to background
+        setAppInBackground(true);
+        setWasPlayingBeforeBackground(isVideoPlayingRef.current);
+        
+        // Force pause video when app goes to background
+        if (webViewRef.current && isVideoPlayingRef.current) {
+          webViewRef.current.postMessage(JSON.stringify({ type: 'forcePause' }));
+        }
+      } else if (nextAppState === 'active') {
+        // App coming to foreground
+        setAppInBackground(false);
+        
+        // Resume video if it was playing before background
+        if (wasPlayingBeforeBackground && webViewRef.current && videoLoadedRef.current) {
+          setTimeout(() => {
+            webViewRef.current?.postMessage(JSON.stringify({ type: 'forcePlay' }));
+          }, 500);
+        }
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    
+    // Web-specific visibility change detection
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        // Tab is hidden
+        setAppInBackground(true);
+        setWasPlayingBeforeBackground(isVideoPlayingRef.current);
+        
+        if (webViewRef.current && isVideoPlayingRef.current) {
+          webViewRef.current.postMessage(JSON.stringify({ type: 'forcePause' }));
+        }
+      } else {
+        // Tab is visible
+        setAppInBackground(false);
+        
+        if (wasPlayingBeforeBackground && webViewRef.current && videoLoadedRef.current) {
+          setTimeout(() => {
+            webViewRef.current?.postMessage(JSON.stringify({ type: 'forcePlay' }));
+          }, 500);
+        }
+      }
+    };
+
+    const handleWindowBlur = () => {
+      setAppInBackground(true);
+      setWasPlayingBeforeBackground(isVideoPlayingRef.current);
+      
+      if (webViewRef.current && isVideoPlayingRef.current) {
+        webViewRef.current.postMessage(JSON.stringify({ type: 'forcePause' }));
+      }
+    };
+
+    const handleWindowFocus = () => {
+      setAppInBackground(false);
+      
+      if (wasPlayingBeforeBackground && webViewRef.current && videoLoadedRef.current) {
+        setTimeout(() => {
+          webViewRef.current?.postMessage(JSON.stringify({ type: 'forcePlay' }));
+        }, 500);
+      }
+    };
+
+    // Add web-specific event listeners
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      window.addEventListener('blur', handleWindowBlur);
+      window.addEventListener('focus', handleWindowFocus);
+    }
+
+    return () => {
+      subscription?.remove();
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+        window.removeEventListener('blur', handleWindowBlur);
+        window.removeEventListener('focus', handleWindowFocus);
+      }
+    };
+  }, [wasPlayingBeforeBackground]);
   const createHtmlContent = (youtubeVideoId: string) => {
     if (!youtubeVideoId || youtubeVideoId.length !== 11 || !/^[a-zA-Z0-9_-]+$/.test(youtubeVideoId)) {
       return `
@@ -188,6 +275,7 @@ export default function ViewTab() {
             let timerCompleted = false;
             let videoUnavailable = false;
             let unavailabilityChecked = false;
+            let backgroundPaused = false;
             
             const securityOverlay = document.getElementById('security-overlay');
             const playPauseButton = document.getElementById('play-pause-button');
@@ -231,10 +319,12 @@ export default function ViewTab() {
                 }
                 
                 if (data.type === 'forcePlay' && playerReady && player && !timerCompleted) {
+                  backgroundPaused = false;
                   player.playVideo();
                 }
                 
                 if (data.type === 'forcePause' && playerReady && player) {
+                  backgroundPaused = true;
                   player.pauseVideo();
                 }
               } catch (e) {
@@ -358,7 +448,7 @@ export default function ViewTab() {
             }
             
             function togglePlayPause() {
-              if (!playerReady || !player || timerCompleted || videoUnavailable) return;
+              if (!playerReady || !player || timerCompleted || videoUnavailable || backgroundPaused) return;
               
               try {
                 if (isPlaying) {
@@ -406,7 +496,7 @@ export default function ViewTab() {
             document.addEventListener('selectstart', e => e.preventDefault());
             
             document.addEventListener('keydown', function(e) {
-              if (timerCompleted) {
+              if (timerCompleted || backgroundPaused) {
                 e.preventDefault();
                 return false;
               }
@@ -473,10 +563,14 @@ export default function ViewTab() {
     setIsProcessingReward(true);
 
     try {
+      // Calculate engagement duration based on actual watch time
+      const engagementDuration = Math.min(watchTimerRef.current, currentVideo.duration_seconds);
+      
       const result = await awardCoinsForVideo(
         user.id,
         currentVideo.video_id,
-        currentVideo.duration_seconds
+        currentVideo.duration_seconds,
+        engagementDuration
       );
 
       if (result.success) {

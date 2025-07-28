@@ -46,12 +46,39 @@ export async function getUserProfile(userId: string) {
 export async function awardCoinsForVideo(
   userId: string,
   videoId: string,
-  watchDuration: number
+  watchDuration: number,
+  engagementDuration?: number
 ) {
   if (!userId || !videoId || watchDuration < 0) {
     return { success: false, error: 'Invalid parameters' };
   }
 
+  try {
+    // Use enhanced award function with engagement tracking
+    const { data, error } = await supabase
+      .rpc('award_coins_with_engagement_tracking', {
+        user_uuid: userId,
+        video_uuid: videoId,
+        watch_duration: watchDuration,
+        engagement_duration: engagementDuration || watchDuration
+      });
+      
+    if (error) {
+      console.error('Error awarding coins with engagement:', error);
+      // Fallback to simple version
+      return await awardCoinsSimple(userId, videoId, watchDuration);
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('awardCoinsForVideo error:', error);
+    // Fallback to simple version
+    return await awardCoinsSimple(userId, videoId, watchDuration);
+  }
+}
+
+// Fallback function for simple coin awarding
+async function awardCoinsSimple(userId: string, videoId: string, watchDuration: number) {
   try {
     const { data, error } = await supabase
       .rpc('award_coins_simple_no_filters', {
@@ -67,7 +94,7 @@ export async function awardCoinsForVideo(
     
     return data;
   } catch (error) {
-    console.error('awardCoinsForVideo error:', error);
+    console.error('awardCoinsSimple error:', error);
     return { success: false, error: error.message };
   }
 }
@@ -77,7 +104,8 @@ export async function getVideoQueue(userId: string) {
   if (!userId) return null;
 
   try {
-    const { data, error } = await supabase.rpc('get_next_video_queue_simple', {
+    // Use enhanced queue function that excludes user's own videos
+    const { data, error } = await supabase.rpc('get_next_video_queue_enhanced', {
       user_uuid: userId
     });
 
@@ -123,5 +151,64 @@ export async function createVideoWithHold(
   } catch (error) {
     console.error('createVideoWithHold error:', error);
     return null;
+  }
+}
+
+// Get video engagement analytics
+export async function getVideoEngagementAnalytics(videoId: string) {
+  if (!videoId) return null;
+
+  try {
+    const { data, error } = await supabase.rpc('get_video_engagement_analytics', {
+      video_uuid: videoId
+    });
+
+    if (error) {
+      console.error('Error fetching video engagement analytics:', error);
+      return null;
+    }
+
+    return data;
+  } catch (error) {
+    console.error('getVideoEngagementAnalytics error:', error);
+    return null;
+  }
+}
+
+// Cleanup expired transactions (can be called periodically)
+export async function cleanupExpiredTransactions() {
+  try {
+    const { data, error } = await supabase.rpc('cleanup_expired_transactions');
+
+    if (error) {
+      console.error('Error cleaning up expired transactions:', error);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true, deletedCount: data };
+  } catch (error) {
+    console.error('cleanupExpiredTransactions error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Check if video should be removed from promotion queue
+export async function checkPromotionQueueEligibility(videoId: string) {
+  if (!videoId) return false;
+
+  try {
+    const { data, error } = await supabase.rpc('check_promotion_queue_eligibility', {
+      video_uuid: videoId
+    });
+
+    if (error) {
+      console.error('Error checking promotion queue eligibility:', error);
+      return false;
+    }
+
+    return data;
+  } catch (error) {
+    console.error('checkPromotionQueueEligibility error:', error);
+    return false;
   }
 }

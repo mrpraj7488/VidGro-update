@@ -10,6 +10,7 @@ interface Video {
   views_count: number;
   target_views: number;
   status: string;
+  user_id?: string;
 }
 
 interface VideoState {
@@ -33,8 +34,11 @@ export const useVideoStore = create<VideoState>((set, get) => ({
       const videos = await getVideoQueue(userId);
       
       if (videos && videos.length > 0) {
+        // Filter out user's own videos from the feed
+        const filteredVideos = videos.filter(video => video.user_id !== userId);
+        
         set({ 
-          videoQueue: videos, 
+          videoQueue: filteredVideos, 
           currentVideoIndex: 0,
           isLoading: false 
         });

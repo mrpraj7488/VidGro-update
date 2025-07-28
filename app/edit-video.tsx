@@ -45,6 +45,10 @@ interface VideoData {
   duration_seconds: number;
   video_views?: any[];
   repromoted_at?: string;
+  total_watch_time?: number;
+  engagement_rate?: number;
+  completion_rate?: number;
+  average_watch_time?: number;
 }
 
 const VIEW_OPTIONS = [10, 25, 50, 100, 200, 500];
@@ -157,6 +161,22 @@ export default function EditVideoScreen() {
   // Animation values
   const coinBounce = useSharedValue(1);
 
+  // Format engagement duration from seconds to readable format
+  const formatEngagementTime = (seconds: number): string => {
+    if (!seconds || seconds === 0) return '0s';
+    
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const remainingSeconds = seconds % 60;
+    
+    if (hours > 0) {
+      return `${hours}h ${minutes}m ${remainingSeconds}s`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${remainingSeconds}s`;
+    } else {
+      return `${remainingSeconds}s`;
+    }
+  };
   useEffect(() => {
     if (params.videoId && user) {
       fetchVideoData();
@@ -195,10 +215,16 @@ export default function EditVideoScreen() {
     if (!params.videoId || !user) return;
 
     try {
-      // Simple direct query to videos table
+      // Enhanced query to get engagement metrics
       const { data, error } = await supabase
         .from('videos')
-        .select('*')
+        .select(`
+          *,
+          total_watch_time,
+          engagement_rate,
+          completion_rate,
+          average_watch_time
+        `)
         .eq('id', params.videoId)
         .eq('user_id', user.id)
         .single();
@@ -246,10 +272,16 @@ export default function EditVideoScreen() {
     // Set up simple real-time updates
     const interval = setInterval(async () => {
       try {
-        // Simple query for fresh data
+        // Enhanced query for fresh data with engagement metrics
         const { data: freshData, error: statusError } = await supabase
           .from('videos')
-          .select('*')
+          .select(`
+            *,
+            total_watch_time,
+            engagement_rate,
+            completion_rate,
+            average_watch_time
+          `)
           .eq('id', video.id)
           .eq('user_id', user?.id)
           .single();
@@ -261,6 +293,10 @@ export default function EditVideoScreen() {
             status: freshData.status,
             hold_until: freshData.hold_until,
             updated_at: freshData.updated_at,
+            total_watch_time: freshData.total_watch_time,
+            engagement_rate: freshData.engagement_rate,
+            completion_rate: freshData.completion_rate,
+            average_watch_time: freshData.average_watch_time,
             completion_rate: freshData.target_views > 0 
               ? Math.round((freshData.views_count / freshData.target_views) * 100)
               : 0
@@ -623,6 +659,41 @@ export default function EditVideoScreen() {
               </Text>
             </View>
           </View>
+
+          {/* Enhanced Engagement Metrics */}
+          <View style={styles.engagementSection}>
+            <Text style={styles.engagementTitle}>Engagement Analytics</Text>
+            
+            <View style={styles.engagementGrid}>
+              <View style={styles.engagementCard}>
+                <Text style={styles.engagementLabel}>Total Watch Time</Text>
+                <Text style={styles.engagementValue}>
+                  {formatEngagementTime(videoData.total_watch_time || 0)}
+                </Text>
+              </View>
+              
+              <View style={styles.engagementCard}>
+                <Text style={styles.engagementLabel}>Engagement Rate</Text>
+                <Text style={styles.engagementValue}>
+                  {videoData.engagement_rate ? `${videoData.engagement_rate.toFixed(1)}%` : '0%'}
+                </Text>
+              </View>
+              
+              <View style={styles.engagementCard}>
+                <Text style={styles.engagementLabel}>Avg Watch Time</Text>
+                <Text style={styles.engagementValue}>
+                  {formatEngagementTime(Math.round(videoData.average_watch_time || 0))}
+                </Text>
+              </View>
+              
+              <View style={styles.engagementCard}>
+                <Text style={styles.engagementLabel}>Completion Rate</Text>
+                <Text style={styles.engagementValue}>
+                  {videoData.completion_rate ? `${videoData.completion_rate.toFixed(1)}%` : '0%'}
+                </Text>
+              </View>
+            </View>
+          </View>
         </View>
 
         {/* Action Buttons */}
@@ -932,6 +1003,43 @@ const styles = StyleSheet.create({
     fontSize: isSmallScreen ? 16 : 18,
     fontWeight: 'bold',
     color: '#333',
+  },
+  engagementSection: {
+    marginTop: 20,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#E0E0E0',
+  },
+  engagementTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 12,
+  },
+  engagementGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  engagementCard: {
+    flex: 1,
+    minWidth: '45%',
+    backgroundColor: '#F8F9FA',
+    borderRadius: 8,
+    padding: 12,
+    alignItems: 'center',
+  },
+  engagementLabel: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  engagementValue: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#800080',
+    textAlign: 'center',
   },
   actionSection: {
     margin: 16,
