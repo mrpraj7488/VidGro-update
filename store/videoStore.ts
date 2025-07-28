@@ -39,12 +39,19 @@ export const useVideoStore = create<VideoState>((set, get) => ({
       console.log('🎬 VideoStore: Received videos from API:', videos?.length || 0);
       
       if (videos && videos.length > 0) {
-        // Filter out user's own videos from the feed
-        const filteredVideos = videos.filter(video => video.user_id !== userId);
-        console.log('🎬 VideoStore: Filtered videos (excluding own):', filteredVideos.length);
+        // The SQL function now handles filtering, so we can use videos directly
+        // But let's add a safety filter just in case
+        const safeVideos = videos.filter(video => 
+          video.video_id && 
+          video.youtube_url && 
+          video.title &&
+          video.duration_seconds > 0 &&
+          video.coin_reward > 0
+        );
+        console.log('🎬 VideoStore: Safe videos after validation:', safeVideos.length);
         
         set({ 
-          videoQueue: filteredVideos, 
+          videoQueue: safeVideos, 
           currentVideoIndex: 0,
           isLoading: false,
           error: null
@@ -55,14 +62,14 @@ export const useVideoStore = create<VideoState>((set, get) => ({
           videoQueue: [], 
           currentVideoIndex: 0, 
           isLoading: false,
-          error: 'No videos available at the moment'
+          error: 'No videos available. Try promoting a video first!'
         });
       }
     } catch (error) {
       console.error('Error fetching videos:', error);
       set({ 
         isLoading: false, 
-        error: error instanceof Error ? error.message : 'Failed to load videos'
+        error: error instanceof Error ? error.message : 'Failed to load videos. Please check your connection.'
       });
     }
   },

@@ -56,7 +56,7 @@ export async function awardCoinsForVideo(
   try {
     console.log('💰 Awarding coins:', { userId, videoId, watchDuration, engagementDuration });
     
-    // Use enhanced award function with engagement tracking
+    // Use the enhanced award function with engagement tracking
     const { data, error } = await supabase.rpc('award_coins_with_engagement_tracking', {
         user_uuid: userId,
         video_uuid: videoId,
@@ -84,18 +84,35 @@ export async function getVideoQueue(userId: string) {
   try {
     console.log('🔍 Supabase: Fetching video queue for user:', userId);
     
-    // Use enhanced queue function that excludes user's own videos and already watched videos
-    const { data, error } = await supabase.rpc('get_next_video_queue_enhanced', {
+    // First try the enhanced queue function
+    const { data: enhancedData, error: enhancedError } = await supabase.rpc('get_next_video_queue_enhanced', {
       user_uuid: userId
     });
 
-    if (error) {
-      console.error('Error fetching video queue:', error);
-      throw new Error(`Database error: ${error.message}`);
+    if (enhancedError) {
+      console.error('Error fetching enhanced video queue:', enhancedError);
+      throw new Error(`Database error: ${enhancedError.message}`);
     }
 
-    console.log('🔍 Supabase: Video queue data received:', data?.length || 0, 'videos');
-    return data;
+    // If enhanced queue has videos, use it
+    if (enhancedData && enhancedData.length > 0) {
+      console.log('🔍 Supabase: Enhanced video queue data received:', enhancedData.length, 'videos');
+      return enhancedData;
+    }
+
+    // If enhanced queue is empty, fall back to simple queue (allows rewatching)
+    console.log('🔍 Supabase: Enhanced queue empty, trying simple queue...');
+    const { data: simpleData, error: simpleError } = await supabase.rpc('get_next_video_queue_simple', {
+      user_uuid: userId
+    });
+
+    if (simpleError) {
+      console.error('Error fetching simple video queue:', simpleError);
+      throw new Error(`Database error: ${simpleError.message}`);
+    }
+
+    console.log('🔍 Supabase: Simple video queue data received:', simpleData?.length || 0, 'videos');
+    return simpleData;
   } catch (error) {
     console.error('getVideoQueue error:', error);
     throw error;
