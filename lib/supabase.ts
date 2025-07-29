@@ -128,9 +128,26 @@ export async function getVideoQueue(userId: string) {
   if (!userId) return null;
 
   try {
-    console.log('🔍 Supabase: Fetching video queue for user:', userId);
+    console.log('🔍 Supabase: Fetching looping video queue for user:', userId);
     
-    // First try the enhanced queue function
+    // Use the new looping queue function for continuous video playback
+    const { data: loopingData, error: loopingError } = await supabase.rpc('get_next_video_queue_looping', {
+      user_uuid: userId
+    });
+
+    if (loopingError) {
+      console.error('Error fetching looping video queue:', loopingError);
+      throw new Error(`Database error: ${loopingError.message}`);
+    }
+
+    // If looping queue has videos, use it
+    if (loopingData && loopingData.length > 0) {
+      console.log('🔍 Supabase: Looping video queue data received:', loopingData.length, 'videos');
+      return loopingData;
+    }
+
+    // If looping queue is empty, fall back to enhanced queue
+    console.log('🔍 Supabase: Looping queue empty, trying enhanced queue...');
     const { data: enhancedData, error: enhancedError } = await supabase.rpc('get_next_video_queue_enhanced', {
       user_uuid: userId
     });
@@ -140,13 +157,12 @@ export async function getVideoQueue(userId: string) {
       throw new Error(`Database error: ${enhancedError.message}`);
     }
 
-    // If enhanced queue has videos, use it
     if (enhancedData && enhancedData.length > 0) {
       console.log('🔍 Supabase: Enhanced video queue data received:', enhancedData.length, 'videos');
       return enhancedData;
     }
 
-    // If enhanced queue is empty, fall back to simple queue (allows rewatching)
+    // Final fallback to simple queue
     console.log('🔍 Supabase: Enhanced queue empty, trying simple queue...');
     const { data: simpleData, error: simpleError } = await supabase.rpc('get_next_video_queue_simple', {
       user_uuid: userId

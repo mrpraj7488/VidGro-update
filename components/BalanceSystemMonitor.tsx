@@ -49,7 +49,7 @@ export default function BalanceSystemMonitor() {
       const { data: completedVideoCount } = await supabase
         .from('videos')
         .select('id', { count: 'exact', head: true })
-        .eq('status', 'completed');
+        .eq('completed', true);
       
       const totalUsers = userCount?.length || 0;
       const totalTransactions = transactionCount?.length || 0;
@@ -197,9 +197,7 @@ export default function BalanceSystemMonitor() {
           
           <View style={styles.benefitItem}>
             <Text style={styles.benefitIcon}>🔒</Text>
-            <Text style={styles.benefitText}>
-              Secure user authentication and data protection
-            </Text>
+            <Text style={styles.benefitText}>Looping video queue for continuous engagement</Text>
           </View>
         </View>
       </View>

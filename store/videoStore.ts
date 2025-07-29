@@ -11,6 +11,7 @@ interface Video {
   target_views: number;
   status: string;
   user_id: string;
+  completed?: boolean;
 }
 
 interface VideoState {
@@ -18,10 +19,12 @@ interface VideoState {
   currentVideoIndex: number;
   isLoading: boolean;
   error: string | null;
+  canLoop: boolean;
   fetchVideos: (userId: string) => Promise<void>;
   getCurrentVideo: () => Video | null;
   moveToNextVideo: () => void;
   clearQueue: () => void;
+  checkQueueLoop: (userId: string) => Promise<boolean>;
 }
 
 export const useVideoStore = create<VideoState>((set, get) => ({
@@ -29,9 +32,10 @@ export const useVideoStore = create<VideoState>((set, get) => ({
   currentVideoIndex: 0,
   isLoading: false,
   error: null,
+  canLoop: true,
 
   fetchVideos: async (userId: string) => {
-    console.log('🎬 VideoStore: Starting to fetch videos for user:', userId);
+    console.log('🎬 VideoStore: Starting to fetch looping videos for user:', userId);
     set({ isLoading: true, error: null });
     
     try {
@@ -39,14 +43,14 @@ export const useVideoStore = create<VideoState>((set, get) => ({
       console.log('🎬 VideoStore: Received videos from API:', videos?.length || 0);
       
       if (videos && videos.length > 0) {
-        // The SQL function now handles filtering, so we can use videos directly
-        // But let's add a safety filter just in case
+        // Enhanced safety filter for the new schema
         const safeVideos = videos.filter(video => 
           video.video_id && 
           video.youtube_url && 
           video.title &&
           video.duration_seconds > 0 &&
-          video.coin_reward > 0
+          video.coin_reward > 0 &&
+          video.completed !== true // Exclude completed videos from queue
         );
         console.log('🎬 VideoStore: Safe videos after validation:', safeVideos.length);
         
@@ -54,7 +58,8 @@ export const useVideoStore = create<VideoState>((set, get) => ({
           videoQueue: safeVideos, 
           currentVideoIndex: 0,
           isLoading: false,
-          error: null
+          error: null,
+          canLoop: true
         });
       } else {
         console.log('🎬 VideoStore: No videos received from API');
@@ -62,14 +67,16 @@ export const useVideoStore = create<VideoState>((set, get) => ({
           videoQueue: [], 
           currentVideoIndex: 0, 
           isLoading: false,
-          error: 'No videos available. Try promoting a video first!'
+          error: 'No videos available. Videos will loop automatically when available!',
+          canLoop: true
         });
       }
     } catch (error) {
       console.error('Error fetching videos:', error);
       set({ 
         isLoading: false, 
-        error: error instanceof Error ? error.message : 'Failed to load videos. Please check your connection.'
+        error: error instanceof Error ? error.message : 'Failed to load videos. Please check your connection.',
+        canLoop: false
       });
     }
   },
@@ -85,6 +92,8 @@ export const useVideoStore = create<VideoState>((set, get) => ({
     if (currentVideoIndex < videoQueue.length - 1) {
       set({ currentVideoIndex: currentVideoIndex + 1 });
     } else {
+      // Loop back to beginning for continuous playback
+      console.log('🔄 VideoStore: Looping back to first video');
       set({ currentVideoIndex: 0 });
     }
   },
@@ -94,7 +103,26 @@ export const useVideoStore = create<VideoState>((set, get) => ({
       videoQueue: [], 
       currentVideoIndex: 0, 
       isLoading: false,
-      error: null
+      error: null,
+      canLoop: true
     });
+  },
+
+  checkQueueLoop: async (userId: string) => {
+    try {
+      const { data, error } = await supabase.rpc('check_and_loop_video_queue', {
+        user_uuid: userId
+      });
+      
+      if (error) {
+        console.error('Error checking queue loop:', error);
+        return false;
+      }
+      
+      return data;
+    } catch (error) {
+      console.error('checkQueueLoop error:', error);
+      return false;
+    }
   },
 }));

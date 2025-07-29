@@ -43,12 +43,10 @@ interface VideoData {
   updated_at: string;
   hold_until?: string;
   duration_seconds: number;
-  video_views?: any[];
   repromoted_at?: string;
   total_watch_time?: number;
-  engagement_rate?: number;
   completion_rate?: number;
-  average_watch_time?: number;
+  completed?: boolean;
 }
 
 const VIEW_OPTIONS = [10, 25, 50, 100, 200, 500];
@@ -215,15 +213,12 @@ export default function EditVideoScreen() {
     if (!params.videoId || !user) return;
 
     try {
-      // Enhanced query to get engagement metrics
+      // Enhanced query to get engagement metrics with new schema
       const { data, error } = await supabase
         .from('videos')
         .select(`
           *,
-          total_watch_time,
-          engagement_rate,
-          completion_rate,
-          average_watch_time
+          total_watch_time
         `)
         .eq('id', params.videoId)
         .eq('user_id', user.id)
@@ -242,16 +237,23 @@ export default function EditVideoScreen() {
         return;
       }
 
-      setVideoData(data);
+      // Calculate completion rate from current data
+      const videoWithCompletion = {
+        ...data,
+        completion_rate: data.target_views > 0 
+          ? Math.round((data.views_count / data.target_views) * 100)
+          : 0
+      };
+      setVideoData(videoWithCompletion);
       
       // Calculate hold timer if video is on hold
-      if (data.status === 'on_hold') {
+      if (videoWithCompletion.status === 'on_hold') {
         let holdUntilTime: Date;
         
-        if (data.hold_until) {
-          holdUntilTime = new Date(data.hold_until);
+        if (videoWithCompletion.hold_until) {
+          holdUntilTime = new Date(videoWithCompletion.hold_until);
         } else {
-          holdUntilTime = new Date(data.created_at);
+          holdUntilTime = new Date(videoWithCompletion.created_at);
           holdUntilTime.setMinutes(holdUntilTime.getMinutes() + 10);
         }
         
@@ -259,7 +261,7 @@ export default function EditVideoScreen() {
         setHoldTimer(Math.max(0, Math.floor(remainingMs / 1000)));
       }
       
-      setupRealTimeUpdates(data);
+      setupRealTimeUpdates(videoWithCompletion);
     } catch (error) {
       console.error('Error:', error);
       Alert.alert('Error', 'Something went wrong');
@@ -269,42 +271,42 @@ export default function EditVideoScreen() {
   };
 
   const setupRealTimeUpdates = (video: VideoData) => {
-    // Set up simple real-time updates
+    // Set up enhanced real-time updates for new schema
     const interval = setInterval(async () => {
       try {
-        // Enhanced query for fresh data with engagement metrics
+        // Enhanced query for fresh data with new schema
         const { data: freshData, error: statusError } = await supabase
           .from('videos')
           .select(`
             *,
-            total_watch_time,
-            engagement_rate,
-            completion_rate,
-            average_watch_time
+            total_watch_time
           `)
           .eq('id', video.id)
           .eq('user_id', user?.id)
           .single();
         
         if (!statusError && freshData) {
-          setVideoData(prev => prev ? {
-            ...prev,
-            views_count: freshData.views_count,
-            status: freshData.status,
-            hold_until: freshData.hold_until,
-            updated_at: freshData.updated_at,
-            total_watch_time: freshData.total_watch_time,
-            engagement_rate: freshData.engagement_rate,
-            completion_rate: freshData.completion_rate,
-            average_watch_time: freshData.average_watch_time,
+          const updatedVideo = {
+            ...freshData,
             completion_rate: freshData.target_views > 0 
               ? Math.round((freshData.views_count / freshData.target_views) * 100)
               : 0
+          };
+          
+          setVideoData(prev => prev ? {
+            ...prev,
+            views_count: updatedVideo.views_count,
+            status: updatedVideo.status,
+            hold_until: updatedVideo.hold_until,
+            updated_at: updatedVideo.updated_at,
+            total_watch_time: updatedVideo.total_watch_time,
+            completion_rate: updatedVideo.completion_rate,
+            completed: updatedVideo.completed
           } : null);
           
           // Check if hold period expired
-          if (freshData.status === 'on_hold' && freshData.hold_until) {
-            const holdUntilTime = new Date(freshData.hold_until);
+          if (updatedVideo.status === 'on_hold' && updatedVideo.hold_until) {
+            const holdUntilTime = new Date(updatedVideo.hold_until);
             if (holdUntilTime.getTime() <= new Date().getTime()) {
               // Hold period expired, update status
               await supabase
@@ -312,7 +314,7 @@ export default function EditVideoScreen() {
                 .update({ status: 'active', hold_until: null })
                 .eq('id', video.id);
             }
-          } else if (freshData.status === 'active') {
+          } else if (updatedVideo.status === 'active') {
             setHoldTimer(0); // Clear the hold timer
           }
         } else {
@@ -321,7 +323,7 @@ export default function EditVideoScreen() {
       } catch (error) {
         console.error('Error refreshing video data:', error);
       }
-    }, 3000); // Update every 3 seconds for responsive updates
+    }, 2000); // Update every 2 seconds for more responsive updates
     
     return () => clearInterval(interval);
   };
@@ -639,23 +641,23 @@ export default function EditVideoScreen() {
           <View style={styles.metricsGrid}>
             {/* Total Views */}
             <View style={styles.metricCard}>
-              <View style={styles.metricHeader}>
+              <Text style={styles.engagementLabel}>Completion Status</Text>
                 <Eye color="#3498DB" size={24} />
-                <Text style={styles.metricLabel}>Total Views</Text>
+                {videoData.completed ? '✅ Complete' : '🔄 In Progress'}
               </View>
               <Text style={styles.metricValue}>
                 {videoData.views_count}/{videoData.target_views}
               </Text>
-            </View>
+              <Text style={styles.engagementLabel}>Progress</Text>
 
-            {/* Watch Duration */}
+                {videoData.completion_rate.toFixed(1)}%
             <View style={styles.metricCard}>
               <View style={styles.metricHeader}>
                 <Clock color="#F39C12" size={24} />
                 <Text style={styles.metricLabel}>Duration</Text>
-              </View>
+              <Text style={styles.engagementLabel}>Views Progress</Text>
               <Text style={styles.metricValue}>
-                {videoData.duration_seconds}s
+                {videoData.views_count}/{videoData.target_views}
               </Text>
             </View>
           </View>

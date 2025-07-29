@@ -553,7 +553,8 @@ export default function ViewTab() {
     
     moveToNextVideo();
     
-    if (videoQueue.length <= 3 && user) {
+    // Refresh queue more frequently for looping
+    if (videoQueue.length <= 5 && user) {
       fetchVideos(user.id);
     }
   }, [moveToNextVideo, videoQueue.length, user, fetchVideos]);
@@ -576,20 +577,25 @@ export default function ViewTab() {
         engagementDuration
       );
 
-      if (result.success || result.coins_awarded > 0) {
+      if (result.success && result.coins_awarded > 0) {
         await refreshProfile();
+        
+        // Show completion status if video reached target
+        if (result.video_completed) {
+          console.log('🎯 Video completed! Target views reached.');
+        }
         
         if (autoSkipEnabledRef.current) {
           autoSkipTimeoutRef.current = setTimeout(() => {
             moveToNextVideo();
-            if (videoQueue.length <= 3) {
+            if (videoQueue.length <= 5) {
               fetchVideos(user.id);
             }
           }, 1500);
         }
       }
     } catch (error) {
-      // Silent error handling
+      console.error('Error processing reward:', error);
     } finally {
       setIsProcessingReward(false);
     }

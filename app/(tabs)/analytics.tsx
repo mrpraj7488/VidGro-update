@@ -40,6 +40,8 @@ interface VideoAnalytics {
   created_at: string;
   coin_cost: number;
   completion_rate: number;
+  completed: boolean;
+  total_watch_time: number;
 }
 
 export default function Analytics() {
@@ -58,17 +60,26 @@ export default function Analytics() {
     if (user) {
       fetchAnalytics();
       
-      // Set up periodic status checking for hold videos
+      // Set up periodic status checking for hold videos and real-time updates
       const statusCheckInterval = setInterval(() => {
-        // Check for expired holds every 5 seconds
+        // Check for expired holds and update video metrics every 5 seconds
         supabase.rpc('check_and_update_expired_holds').then(({ data: updatedCount }) => {
           if (updatedCount && updatedCount > 0) {
             console.log(`${updatedCount} videos automatically activated from hold`);
-            // Refresh analytics after status updates
             fetchAnalytics();
           }
         }).catch(error => {
           console.error('Error checking expired holds:', error);
+        });
+        
+        // Trigger periodic cleanup for real-time data sync
+        supabase.rpc('run_periodic_cleanup').then(({ data: cleanupResult }) => {
+          if (cleanupResult && (cleanupResult.expired_transactions_cleaned > 0 || cleanupResult.holds_updated > 0)) {
+            console.log('Periodic cleanup completed:', cleanupResult);
+            fetchAnalytics(); // Refresh after cleanup
+          }
+        }).catch(error => {
+          console.error('Error in periodic cleanup:', error);
         });
       }, 5000);
       
@@ -133,7 +144,7 @@ export default function Analytics() {
         setRecentActivity(activityData);
       } */
 
-      // Fetch user's videos with analytics
+      // Fetch user's videos with enhanced analytics including completion status
       const { data: videosData, error: videosError } = await supabase
         .from('videos')
         .select(`
@@ -143,7 +154,9 @@ export default function Analytics() {
           target_views,
           status,
           created_at,
-          coin_cost
+          coin_cost,
+          completed,
+          total_watch_time
         `)
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
@@ -392,6 +405,16 @@ export default function Analytics() {
                       <Text style={styles.costText}>
                         Spent: 🪙{video.coin_cost}
                       </Text>
+                      {video.total_watch_time > 0 && (
+                        <Text style={styles.engagementText}>
+                          Total Watch Time: {Math.floor(video.total_watch_time / 60)}m {video.total_watch_time % 60}s
+                        </Text>
+                      )}
+                      {video.completed && (
+                        <Text style={styles.completedText}>
+                          ✅ Target Reached!
+                        </Text>
+                      )}
                     </View>
                   </TouchableOpacity>
                 );
@@ -731,6 +754,17 @@ const styles = StyleSheet.create({
   costText: {
     fontSize: 12,
     color: '#999',
+  },
+  engagementText: {
+    fontSize: 11,
+    color: '#666',
+    marginTop: 2,
+  },
+  completedText: {
+    fontSize: 11,
+    color: '#2ECC71',
+    fontWeight: '600',
+    marginTop: 2,
   },
   viewMoreButton: {
     flexDirection: 'row',
