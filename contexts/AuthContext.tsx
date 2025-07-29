@@ -98,6 +98,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       },
     });
     
+    // If signup successful, ensure profile is created
+    if (data?.user && !error) {
+      try {
+        // Wait a moment for the trigger to execute
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Check if profile was created, if not create it manually
+        const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('id', data.user.id)
+          .single();
+        
+        if (profileError && profileError.code === 'PGRST116') {
+          // Profile doesn't exist, create it manually
+          console.log('Profile not found, creating manually...');
+          
+          const { data: createResult, error: createError } = await supabase
+            .rpc('create_missing_profile', {
+              user_id: data.user.id,
+              user_email: email,
+              user_username: username
+            });
+          
+          if (createError) {
+            console.error('Failed to create profile manually:', createError);
+          } else {
+            console.log('Profile created manually:', createResult);
+          }
+        }
+      } catch (profileCreationError) {
+        console.error('Error ensuring profile creation:', profileCreationError);
+      }
+    }
+    
     // If signup successful but no session, try to sign in immediately
     if (data?.user && !data?.session && !error) {
       const { error: signInError } = await supabase.auth.signInWithPassword({

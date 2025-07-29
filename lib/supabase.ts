@@ -24,6 +24,8 @@ export async function getUserProfile(userId: string) {
   if (!userId) return null;
 
   try {
+    console.log('Fetching profile for user:', userId);
+    
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
@@ -31,10 +33,54 @@ export async function getUserProfile(userId: string) {
       .single();
 
     if (error) {
-      console.error('Error fetching user profile:', error.message);
+      console.error('Error fetching user profile:', error.message, 'Code:', error.code);
+      
+      // If profile doesn't exist (PGRST116), try to create it
+      if (error.code === 'PGRST116') {
+        console.log('Profile not found, attempting to create...');
+        
+        // Get user info from auth
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        
+        if (user && user.id === userId) {
+          try {
+            const { data: createResult, error: createError } = await supabase
+              .rpc('create_missing_profile', {
+                user_id: userId,
+                user_email: user.email || 'user@example.com',
+                user_username: user.user_metadata?.username || null
+              });
+            
+            if (createError) {
+              console.error('Failed to create missing profile:', createError);
+              return null;
+            }
+            
+            console.log('Profile creation result:', createResult);
+            
+            // Try fetching the profile again
+            const { data: newProfileData, error: newProfileError } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('id', userId)
+              .single();
+            
+            if (newProfileError) {
+              console.error('Error fetching newly created profile:', newProfileError);
+              return null;
+            }
+            
+            return newProfileData;
+          } catch (createError) {
+            console.error('Exception creating missing profile:', createError);
+          }
+        }
+      }
+      
       return null;
     }
 
+    console.log('Profile fetched successfully:', data);
     return data;
   } catch (error) {
     console.error('Profile fetch failed:', error);
